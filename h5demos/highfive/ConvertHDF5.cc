@@ -58,21 +58,23 @@ auto ds_names = return_dsetnames(l);
  
 auto classes = return_classes(l);
 //for(TClass* _class:classes)std::cout<<_class->GetName()<<std::endl;
-for(std::string name:ds_names)std::cout<<"DataSet Name "<<name<<std::endl;
+//for(std::string name:ds_names)std::cout<<"DataSet Name "<<name<<std::endl;
+//std::cout<<classes.size()<<" "<<ds_names.size()<<std::endl;
+//exit(1);
 while(ievt<nentries){ 
   e->GetEntry(ievt); 
   for (Long64_t jentry=0;jentry<l->GetEntriesFast();++jentry){
        auto b = dynamic_cast<TBranch*>((*l)[jentry]);
        auto dataprod_name = b->GetName();
        if(classes[jentry]==nullptr){
-	 // continue;
-	 std::cout<<"Name of the branch "<<dataprod_name<<" "<<ievt<<std::endl; 
+	 //continue;
+	 std::cout<<"Name of the branch (null) "<<dataprod_name<<" "<<ievt<<std::endl; 
 	 auto blob = return_fundamental_blobs(b);
 	 products.push_back(blob);
        }
 
        else{
-	 std::cout<<"Name of the branch "<<dataprod_name<<" "<<ievt<<std::endl; 
+	 std::cout<<"Name of the branch (not null) "<<dataprod_name<<" "<<ievt<<std::endl; 
 	 auto blob = return_blob(b,classes[jentry]);
 	 products.push_back(blob);
        }
