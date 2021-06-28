@@ -23,6 +23,7 @@ flatten(std::vector<std::vector<char>> const& tmp) {
   return tmp1;
 }
 
+
 void
 write_1D_chars(std::vector<product_t> const& products, 
                std::vector<std::string> const& ds_names, 
@@ -42,11 +43,12 @@ write_1D_chars(std::vector<product_t> const& products,
     auto ds_name = ds_names[prod_index];
     //   auto sum_prods = std::accumulate(sizes.begin(), sizes.end(), 0);
     auto sum_prods = std::accumulate(sizes.begin(),sizes.end(),0);
+    if(sum_prods==0)continue; //skip the empty buffers
     //create and extend dataset for sizes here!
     auto szds_name = ds_name+"_sz";
     auto offset_name = ds_name+"_offset";
     if(!lumi.exist(szds_name)) {
-        std::cout << "creating size dataset for : " << ds_name <<" "<<batch<< '\n';
+        std::cout << "creating size dataset for : " << szds_name <<" "<<batch<< '\n';
       DataSetCreateProps props;
       props.add(Chunking(std::vector<hsize_t>{batch}));
       DataSpace dataspace = DataSpace({batch}, {DataSpace::UNLIMITED});
