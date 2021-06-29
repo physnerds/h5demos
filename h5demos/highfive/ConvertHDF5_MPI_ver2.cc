@@ -185,7 +185,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 	int rank = GetMPILocalRank();
 	
 	//if(rank%2==0)
-	std::cout<<"Rank of the MPI "<<GetMPILocalRank()<<std::endl;
+	std::cout<<"Rank of the MPI "<<GetMPILocalRank()<<" "<<ievt<<std::endl;
 	write_1D_chars_MPI(products,dset_names,batch,nbatch,round,lumi,global_rank,global_size);
 	
 	/*
