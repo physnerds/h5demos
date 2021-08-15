@@ -1,9 +1,9 @@
 #ifndef H5_WRITE_CHARS_H
 #define H5_WRITE_CHARS_H
 
-/*
+
 #define DEBUG 
-*/
+
 #include <highfive/H5DataSet.hpp>
 #include <highfive/H5DataSpace.hpp>
 #include <highfive/H5DataType.hpp>
@@ -133,13 +133,18 @@ int test_parallel_hdf5(){
   //now the extension in the loop.
 
   std::vector<int>num_list;
-  for(int i =0;i<10;i++)num_list.push_back(i);
-  srand(time(NULL)+rank);
-  for(int i = 0;i<num_list.size();i++){
+  srand(time(NULL));
+  for(int i =0;i<size;i++){
+    int random_number = rand()%100;
+    num_list.push_back(random_number);
+  }
+  std::cout<<"size of the vector "<<num_list.size()<<std::endl;
+  for(int i=0;i<num_list.size();i++)std::cout<<" Content "<<num_list[i]<<std::endl;
+  for(int i = 0;i<size;i++){
     int random_num;
-    random_num = num_list[i];
     
-    std::cout<<"Random number "<<random_num<<std::endl;
+    random_num = num_list[rank];
+    std::cout<<"Random number "<<random_num<<" "<<rank<<std::endl;
     std::vector<char>char_buff = {static_cast<char>(random_num)};
     auto curr_size = static_cast<unsigned long long>(char_buff.size());
     auto _curr_size = static_cast<int>(curr_size);
@@ -197,6 +202,8 @@ int test_parallel_hdf5(){
     
     auto _status = H5Dwrite(_dataset_id,H5T_NATIVE_CHAR,mspace_id,
 			    _dspace_id,_xf_id,__buff);
+
+    // MPI_Barrier(MPI_COMM_WORLD);
 
     
     assert(_status>=0);
