@@ -15,7 +15,7 @@
 #include "serialize_dataprods.h"
 #include "utilities.h"
 #include "time.h"
-
+#include <ctime>
 //#include "dkmeta.h"
 #include "dk2nu.h"
 
@@ -47,6 +47,7 @@ using product_t = std::vector<char>;
 #define CH_NY 2
 
 int test_parallel_hdf5(){
+  
   int flag;
   MPI_Initialized(&flag);
 
@@ -89,7 +90,8 @@ int test_parallel_hdf5(){
     num_blocks[1],
     hslab_start_pos[1];
 
-  dimsf[0]=1;
+  dimsf[0]=size;
+  hsize_t chunk_dims[1] = {static_cast<hsize_t>(size)};
   max_dims[0] = H5S_UNLIMITED;
   num_blocks[0]=1;
   hslab_start_pos[0]=0;
@@ -98,33 +100,35 @@ int test_parallel_hdf5(){
   auto dspace_id = H5Screate_simple(1,dimsf,max_dims);
   auto dplist_id = H5Pcreate(H5P_DATASET_CREATE);
   
-  H5Pset_chunk(dplist_id,1,dimsf);
+  H5Pset_chunk(dplist_id,1,chunk_dims);
   auto dname = "test_data";
   auto dset_id = H5Dcreate(lumi,dname,H5T_NATIVE_CHAR,dspace_id,
 			   H5P_DEFAULT,dplist_id,H5P_DEFAULT);
-
+  
   auto xf_id = H5Pcreate(H5P_DATASET_XFER);
   H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
   ret = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,hslab_start_pos,
 				 NULL,num_blocks,dimsf);
 
   assert(ret>=0);
-
+  
+  
   auto mspace_id = H5Screate_simple(1,mem_dims,NULL);
-  std::vector<int>buff_ = {1};
+  std::vector<int>buff_ = {1,2};
   std::vector<char>buff = {static_cast<char>(buff_[0])};
   char* _buff = buff.data();
 
   
   auto status = H5Dwrite(dset_id,H5T_NATIVE_CHAR,mspace_id,
 			 dspace_id,xf_id,_buff);
-  
 
+    
   auto flush_err = H5Fflush(dset_id,H5F_SCOPE_LOCAL);
   assert(flush_err>=0);
   
   MPI_Barrier(MPI_COMM_WORLD);
   H5Sclose(mspace_id);
+  
   H5Sclose(dspace_id);
   H5Dclose(dset_id);
   H5Pclose(dplist_id);
@@ -134,15 +138,16 @@ int test_parallel_hdf5(){
 
   std::vector<int>num_list;
   srand(time(NULL));
-  for(int i =0;i<size;i++){
+  hsize_t trial_offset=0;
+  for(int i =0;i<size*2;i++){
     int random_number = rand()%100;
     num_list.push_back(random_number);
   }
   std::cout<<"size of the vector "<<num_list.size()<<std::endl;
   for(int i=0;i<num_list.size();i++)std::cout<<" Content "<<num_list[i]<<std::endl;
-  for(int i = 0;i<size;i++){
+   for(int i = 0;i<2;i++){
+    // MPI_Barrier(MPI_COMM_WORLD);//maybe we can synchronize before starting to write
     int random_num;
-    
     random_num = num_list[rank];
     std::cout<<"Random number "<<random_num<<" "<<rank<<std::endl;
     std::vector<char>char_buff = {static_cast<char>(random_num)};
@@ -151,7 +156,7 @@ int test_parallel_hdf5(){
     
     int tot_size;
     MPI_Scan(&_curr_size,&tot_size,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
-
+    MPI_Barrier(MPI_COMM_WORLD);
     auto _dataset_id = H5Dopen(lumi,dname,H5P_DEFAULT);
     auto _xf_id = H5Pcreate(H5P_DATASET_XFER);
     H5Pset_dxpl_mpio(_xf_id,H5FD_MPIO_COLLECTIVE);
@@ -163,15 +168,15 @@ int test_parallel_hdf5(){
     H5Sget_simple_extent_dims(_dspace_id,curr_dims,NULL);
 
     int tot_dims;
+    hsize_t _tot_size = static_cast<hsize_t>(tot_size);
     int _curr_dims = static_cast<int>(curr_dims[0]);
-   #ifdef DEBUG 
+#ifdef DEBUG 
     std::cout<<"curr dims "<<_curr_dims<<" total size "<<tot_size
 	     <<" total dimensions "<<ndims<<" rank "<<rank<<std::endl;
     // MPI_Scan(&_curr_dims,&tot_dims,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
-   #endif
-    hsize_t new_dims[1] = {curr_dims[0]+curr_size};
-
-        
+#endif
+    
+    hsize_t new_dims[1] = {trial_offset+curr_dims[0]+_tot_size};        
     //extend the data-set
     auto status_id = H5Dset_extent(_dataset_id,new_dims);
     _dspace_id = H5Dget_space(_dataset_id); 
@@ -179,41 +184,59 @@ int test_parallel_hdf5(){
     //test if the new dimension is updated or not....
     hsize_t new_curr_dims[ndims];
     H5Sget_simple_extent_dims(_dspace_id,new_curr_dims,NULL);
-    #ifdef DEBUG
+    
+#ifdef DEBUG
     std::cout<<" Size of the dataspace after extension "<<new_curr_dims[0]<<std::endl;
-    #endif
+#endif
+    
     H5S_seloper_t op = H5S_SELECT_SET;
-    hsize_t offset[1] = {curr_dims[0]};
+     hsize_t offset[1] = {static_cast<hsize_t>(trial_offset+_tot_size)};//{curr_dims[0]};
+     //hsize_t offset[1]= {curr_dims[0]};
     hsize_t count[1] = {1};
     hsize_t buff_size[1] = {curr_size};
     
-    #ifdef DEBUG
+#ifdef DEBUG
     std::cout<<"offset "<<offset[0]<<" new_dims "<<new_dims[0]
 	     <<" buffer size "<<buff_size[0]
 	     <<" current size "<<curr_dims[0]<<std::endl;
-    #endif
+#endif
 
+    
     auto space_status = H5Sselect_hyperslab(_dspace_id,op,
 					    offset,NULL,count,buff_size);
 
     
-    auto mspace_id = H5Screate_simple(1,buff_size,NULL);
+    auto _mspace_id = H5Screate_simple(1,buff_size,NULL);
     char* __buff = char_buff.data();
-    
-    auto _status = H5Dwrite(_dataset_id,H5T_NATIVE_CHAR,mspace_id,
+    std::vector<char>char_num_list;
+    for(int i=0;i<num_list.size();i++)char_num_list.push_back(static_cast<char>(num_list[i]));
+    //char* __buff = char_num_list.data();
+    //  MPI_Barrier(MPI_COMM_WORLD);
+    auto _status = H5Dwrite(_dataset_id,H5T_NATIVE_CHAR,_mspace_id,
 			    _dspace_id,_xf_id,__buff);
 
+#ifdef DEBUG
+  std::time_t result = std::time(nullptr);
+  std::cout<<" Data "<<random_num<< " For Rank "<<rank<<" At Offset "<<offset[0]<<std::endl;
+#endif
     // MPI_Barrier(MPI_COMM_WORLD);
-
+    
     
     assert(_status>=0);
-    
+
+    // flush_err = H5Fflush(dset_id,H5F_SCOPE_LOCAL);
+    //  assert(flush_err>=0);
     H5Pclose(_xf_id);
     H5Sclose(_dspace_id);
-    H5Sclose(mspace_id);
+    H5Sclose(_mspace_id);
     H5Dclose(_dataset_id);
+
+    trial_offset = curr_dims[0];
     
-  }
+    #ifdef DEBUG
+    std::cout<<"********************END OF THE FOR LOOP**************"<<" "<<rank<<std::endl; 
+    #endif
+      }
   
   
   //END OF THE TEST LINE
