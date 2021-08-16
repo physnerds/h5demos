@@ -21,16 +21,7 @@
 #include "mpi.h"
 #include "H5FDmpio.h"
 //#include "H5Cpp.h"
-using product_t = std::vector<char>;
 
-#define RANK 2 //This is not MPI RANK
-#define NAME_LENGTH 17
-#define DATASETNAME "CCQENu"
-//#define GROUPNAME "lumi"
-#define NX 8
-#define NY 4
-#define CH_NX 2
-#define CH_NY 2
 
 int test_parallel_hdf5(){
   
