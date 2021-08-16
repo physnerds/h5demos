@@ -4,16 +4,6 @@
 
 #define DEBUG 
 
-#include <highfive/H5DataSet.hpp>
-#include <highfive/H5DataSpace.hpp>
-#include <highfive/H5DataType.hpp>
-#include <highfive/H5File.hpp>
-
-
-#include "h5_write_1D_chars.h"
-#include "h5_write_1D_chars_MPI.h"
-#include "serialize_dataprods.h"
-#include "utilities.h"
 #include "time.h"
 #include <ctime>
 //#include "dkmeta.h"
@@ -25,16 +15,12 @@
 #include <iostream>
 #include <stdlib.h>
 #include <iomanip>
-#include "TH1D.h"
-#include "TChain.h"
-#include "TH2D.h"
-#include "TFile.h"
+
 #include "hdf5.h"
 #include "h5_setup_mpi.h"
 #include "mpi.h"
 #include "H5FDmpio.h"
 //#include "H5Cpp.h"
-using namespace HighFive;
 using product_t = std::vector<char>;
 
 #define RANK 2 //This is not MPI RANK
