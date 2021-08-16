@@ -90,8 +90,9 @@ int test_parallel_hdf5(){
     num_blocks[1],
     hslab_start_pos[1];
 
-  dimsf[0]=size;
-  hsize_t chunk_dims[1] = {static_cast<hsize_t>(size)};
+  dimsf[0]=1;
+  //hsize_t chunk_dims[1] = {static_cast<hsize_t>(size)};
+  hsize_t chunk_dims[1] = {1};
   max_dims[0] = H5S_UNLIMITED;
   num_blocks[0]=1;
   hslab_start_pos[0]=0;
@@ -139,16 +140,16 @@ int test_parallel_hdf5(){
   std::vector<int>num_list;
   srand(time(NULL));
   hsize_t trial_offset=0;
-  for(int i =0;i<size*2;i++){
+  for(int i =0;i<size*3;i++){
     int random_number = rand()%100;
     num_list.push_back(random_number);
   }
   std::cout<<"size of the vector "<<num_list.size()<<std::endl;
   for(int i=0;i<num_list.size();i++)std::cout<<" Content "<<num_list[i]<<std::endl;
-   for(int i = 0;i<2;i++){
+   for(int i = 0;i<3;i++){
     // MPI_Barrier(MPI_COMM_WORLD);//maybe we can synchronize before starting to write
     int random_num;
-    random_num = num_list[rank];
+    random_num = num_list[rank+i*size];
     std::cout<<"Random number "<<random_num<<" "<<rank<<std::endl;
     std::vector<char>char_buff = {static_cast<char>(random_num)};
     auto curr_size = static_cast<unsigned long long>(char_buff.size());
