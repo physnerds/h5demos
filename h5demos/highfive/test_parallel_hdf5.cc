@@ -225,7 +225,7 @@ int test_parallel_hdf5(){
 	     <<" current size "<<curr_dims[0]<<std::endl;
 #endif
 
-    
+
     auto space_status = H5Sselect_hyperslab(_dspace_id,op,
 					    offset,NULL,count,buff_size);
 
@@ -236,20 +236,17 @@ int test_parallel_hdf5(){
     for(int i=0;i<num_list.size();i++)char_num_list.push_back(static_cast<char>(num_list[i]));
     //char* __buff = char_num_list.data();
     //  MPI_Barrier(MPI_COMM_WORLD);
-     auto _status = H5Dwrite(_dataset_id,H5T_NATIVE_CHAR,_mspace_id,
+    MPI_Barrier(MPI_COMM_WORLD);
+    auto _status = H5Dwrite(_dataset_id,H5T_NATIVE_CHAR,_mspace_id,
    			    _dspace_id,_xf_id,__buff);
+    assert(_status>=0);
 
-     //#ifdef DEBUG
+#ifdef DEBUG
   std::time_t result = std::time(nullptr);
   std::cout<<" Data "<<random_num<< " For Rank "<<rank<<" At Offset "<<offset[0]<<std::endl;
-  //#endif
-  //   MPI_Barrier(MPI_COMM_WORLD);
-    
-    
-   assert(_status>=0);
-
-
-     MPI_Barrier(MPI_COMM_WORLD);
+#endif
+  
+  MPI_Barrier(MPI_COMM_WORLD);
 #ifdef DEBUG
     std::cout<<"Trial Offset is "<<trial_offset<<std::endl;
 #endif
