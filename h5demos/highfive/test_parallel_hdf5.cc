@@ -67,10 +67,10 @@ int test_parallel_hdf5(){
     num_blocks[1],
     hslab_start_pos[1];
 
-  dimsf[0]= {1};
+  dimsf[0]= {0};
   // hsize_t chunk_dims[1] = {static_cast<hsize_t>(size)};
   int _iter = 3;
-  hsize_t chunk_dims[1] = {static_cast<hsize_t>(size*_iter+1)};
+  hsize_t chunk_dims[1] = {static_cast<hsize_t>(size)};
   max_dims[0] = H5S_UNLIMITED;
   num_blocks[0]=1;
   hslab_start_pos[0]=0;
@@ -83,7 +83,7 @@ int test_parallel_hdf5(){
   auto dname = "test_data";
   auto dset_id = H5Dcreate(lumi,dname,H5T_NATIVE_CHAR,dspace_id,
 			   H5P_DEFAULT,dplist_id,H5P_DEFAULT);
-  
+  /*
   auto xf_id = H5Pcreate(H5P_DATASET_XFER);
   H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
   ret = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,hslab_start_pos,
@@ -97,7 +97,7 @@ int test_parallel_hdf5(){
   std::vector<char>buff = {static_cast<char>(buff_[0])};
   char* _buff = buff.data();
 
-  /*
+  
    auto status = H5Dwrite(dset_id,H5T_NATIVE_CHAR,mspace_id,
   			 dspace_id,xf_id,_buff);
 
@@ -206,7 +206,7 @@ int test_parallel_hdf5(){
     H5S_seloper_t op = H5S_SELECT_SET;
     hsize_t offset[1];
     if(i==0){
-      offset[0] = {_tot_size};
+      offset[0] = {_tot_size-1};
     }
     else if(i==1){
       // offset[0] = {static_cast<hsize_t>(trial_offset+curr_dims[0])};//{curr_dims[0]};
