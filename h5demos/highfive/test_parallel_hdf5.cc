@@ -69,7 +69,8 @@ int test_parallel_hdf5(){
 
   dimsf[0]= {1};
   // hsize_t chunk_dims[1] = {static_cast<hsize_t>(size)};
-  hsize_t chunk_dims[1] = {500};
+  int _iter = 3;
+  hsize_t chunk_dims[1] = {static_cast<hsize_t>(size*_iter+1)};
   max_dims[0] = H5S_UNLIMITED;
   num_blocks[0]=1;
   hslab_start_pos[0]=0;
@@ -90,17 +91,17 @@ int test_parallel_hdf5(){
 
   assert(ret>=0);
   
-  /* 
+  
   auto mspace_id = H5Screate_simple(1,mem_dims,NULL);
   std::vector<int>buff_ = {-1,-2,-3};
   std::vector<char>buff = {static_cast<char>(buff_[0])};
   char* _buff = buff.data();
 
-  
+  /*
    auto status = H5Dwrite(dset_id,H5T_NATIVE_CHAR,mspace_id,
   			 dspace_id,xf_id,_buff);
 
-    
+   
   auto flush_err = H5Fflush(dset_id,H5F_SCOPE_LOCAL);
   assert(flush_err>=0);
   */
@@ -117,13 +118,13 @@ int test_parallel_hdf5(){
   std::vector<int>num_list;
   srand(time(NULL));
   hsize_t trial_offset=0;
-  for(int i =0;i<size*3;i++){
+  for(int i =0;i<size*_iter;i++){
     int random_number = rand()%100;
     num_list.push_back(random_number);
   }
   std::cout<<"size of the vector "<<num_list.size()<<std::endl;
   for(int i=0;i<num_list.size();i++)std::cout<<" Content "<<num_list[i]<<std::endl;
-   for(int i = 0;i<3;i++){
+   for(int i = 0;i<_iter;i++){
     // MPI_Barrier(MPI_COMM_WORLD);//maybe we can synchronize before starting to write
     int random_num;
     random_num = num_list[rank+i*size];
@@ -250,7 +251,10 @@ int test_parallel_hdf5(){
   std::time_t result = std::time(nullptr);
   std::cout<<" Data "<<random_num<< " For Rank "<<rank<<" At Offset "<<offset[0]<<" at "<<result<<std::endl;
 #endif
-  
+
+
+  //  auto flush_err = H5Fflush(_dataset_id,H5F_SCOPE_LOCAL);
+  //  assert(flush_err>=0);
   MPI_Barrier(MPI_COMM_WORLD);
 
 #ifdef DEBUG
