@@ -69,7 +69,7 @@ int test_parallel_hdf5(){
 
   dimsf[0]= {1};
   // hsize_t chunk_dims[1] = {static_cast<hsize_t>(size)};
-  hsize_t chunk_dims[1] = {1};
+  hsize_t chunk_dims[1] = {500};
   max_dims[0] = H5S_UNLIMITED;
   num_blocks[0]=1;
   hslab_start_pos[0]=0;
@@ -236,17 +236,23 @@ int test_parallel_hdf5(){
     for(int i=0;i<num_list.size();i++)char_num_list.push_back(static_cast<char>(num_list[i]));
     //char* __buff = char_num_list.data();
     //  MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
-    auto _status = H5Dwrite(_dataset_id,H5T_NATIVE_CHAR,_mspace_id,
+
+     auto _status = H5Dwrite(_dataset_id,H5T_NATIVE_CHAR,_mspace_id,
    			    _dspace_id,_xf_id,__buff);
     assert(_status>=0);
+#ifdef DEBUG
+    if(rank==2)
+      std::cout<<"Write Status "<<_status<<" Rank "<<rank<<std::endl;
 
+#endif
+    
 #ifdef DEBUG
   std::time_t result = std::time(nullptr);
-  std::cout<<" Data "<<random_num<< " For Rank "<<rank<<" At Offset "<<offset[0]<<std::endl;
+  std::cout<<" Data "<<random_num<< " For Rank "<<rank<<" At Offset "<<offset[0]<<" at "<<result<<std::endl;
 #endif
   
   MPI_Barrier(MPI_COMM_WORLD);
+
 #ifdef DEBUG
     std::cout<<"Trial Offset is "<<trial_offset<<std::endl;
 #endif
