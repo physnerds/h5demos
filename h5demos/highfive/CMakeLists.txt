@@ -62,9 +62,9 @@ add_executable(ConvertHDF5_MPI_ver2 ConvertHDF5_MPI_ver2.cc)
 target_compile_options(ConvertHDF5_MPI_ver2 PRIVATE ${HDF5_CXX_COMPILER_EXECUTABLE})
 target_link_libraries(ConvertHDF5_MPI_ver2 ${libraries})
 
-add_executable(ConvertHDF5_MPI_ver3 ConvertHDF5_MPI_ver3.cc)
-target_compile_options(ConvertHDF5_MPI_ver3 PRIVATE ${HDF5_CXX_COMPILER_EXECUTABLE})
-target_link_libraries(ConvertHDF5_MPI_ver3 ${libraries})
+add_executable(ConvertHDF5_MPI_ver4 ConvertHDF5_MPI_ver4.cc)
+target_compile_options(ConvertHDF5_MPI_ver4 PRIVATE ${H5PCC_CXX_COMPILE_FLAG})
+target_link_libraries(ConvertHDF5_MPI_ver4 ${libraries})
 
 add_executable(test_tmpi test_tmpi.cc)
 target_compile_options(test_tmpi PRIVATE ${HDF5_CXX_COMPILER_EXECUTABLE})
@@ -81,3 +81,8 @@ target_link_libraries(read_h5_deserialize_MPI_1D ${libraries})
 add_executable(run_scan run_scan.cc)
 target_compile_options(run_scan PRIVATE ${HDF5_CXX_COMPILER_EXECUTABLE})
 target_link_libraries(run_scan ${libraries})
+
+add_executable(test_parallel_hdf5 test_parallel_hdf5.cc)
+target_compile_options(test_parallel_hdf5 PRIVATE ${HDF5_CXX_COMPILER_EXECUTABLE})
+target_link_libraries(test_parallel_hdf5 ${libraries})
+
