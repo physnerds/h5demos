@@ -162,8 +162,13 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
 
     //Creating part is done....now the filling part.
-    
-    int niter = 200;
+    // nentries = 97;
+    int niter = nentries/global_size;
+    int remainder = nentries%global_size;
+
+    std::cout<<"Total Entries "<<nentries<<" "<<niter*global_size+remainder
+	     <<" Iter "<<niter<<" Remainder "<<remainder<<std::endl;
+    //exit(1);
     SetTotalBranches(tot_branches);
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -185,7 +190,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
       }
       nbatch++;
-      if(nbatch==batch||j==nentries-1){
+      if(nbatch==batch||j==niter*global_size-1){
 	int rank = GetMPILocalRank();
 	write_1D_chars_MPI(products,dset_names,batch,nbatch,
 			   round,lumi,global_rank,global_size,i);
@@ -198,6 +203,37 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
     }
     MPI_Barrier(MPI_COMM_WORLD);
+
+    //now for the remainder...
+    for(Long64_t jentry=niter*global_size;jentry<nentries;jentry++){
+      auto j = jentry+global_rank;
+      e->GetEntry(j);
+      for(Long64_t jentry=0;jentry<tot_branches;++jentry){
+	auto b = dynamic_cast<TBranch*>((*l)[jentry]);
+	auto dataprod_name = b->GetName();
+	if(classes[jentry]==nullptr){
+	  auto blob = return_fundamental_blobs(b);
+	  products.push_back(blob);
+	}
+	else{
+	  auto blob = return_blob(b,classes[jentry]);
+	  products.push_back(blob);
+	}
+
+      }
+      nbatch++;
+      if(nbatch==batch||j==niter*global_size-1){
+	int rank = GetMPILocalRank();
+	write_1D_chars_MPI(products,dset_names,batch,nbatch,
+			   round,lumi,global_rank,global_size,i);
+
+	nbatch=0;
+	products.clear();
+	++round;
+
+      }
+      
+    }
     
     size_t obj_id = H5Fget_obj_count(file_id,H5F_OBJ_ALL);
     std::cout<<"Total Open Objects are "<<obj_id<<" in rank "<<global_rank<<std::endl;
