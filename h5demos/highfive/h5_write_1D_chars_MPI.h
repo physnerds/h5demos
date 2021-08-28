@@ -5,20 +5,10 @@
 #include "serialize_dataprods.h"
 //#include "mpi.h"
 //#include "h5_setup_mpi.h
-
+#define DEBUG
 //eventually need to get rid of highfive...
 using namespace HighFive;
 using product_t = std::vector<char>;
-/*
-template<typename T>
-void CreateOffsetDataSet(Group lumi,T val, unsigned long batch,std::string offset_name){
-  DataSetCreateProps props;
-  props.add(Chunking(std::vector<hsize_t>{batch}));
-  DataSpace dataspace = DataSpace({batch},{DataSpace::UNLIMITED});
-  DataSet dataset = lumi.createDataSet<int>(offset_name,dataspace,props);
-  dataset.write(val);
-}
-*/
 
 struct dataset_info{
   // Things I would like to save from the data space easily
@@ -31,33 +21,6 @@ struct dataset_info{
 
 };
 
-//these variables to save info....
-std::map<std::string,dataset_info>list_createInfo;
-std::map<std::string, dataset_info>size_createInfo;
-int __tot_branches=0;
-bool Writing_Data=false;
-//end of these variables
-
-
-
-//need to write the value and return the dataset_id
-template<typename T>
-hid_t CreateOffSetDataSetMPI(hid_t group_id/* Supposed to be lumi ID*/, T val, unsigned long batch, std::string offset_name, hsize_t* f_dims, hsize_t* max_dims){ //For now MAX DIMS BETTER BE SET AT H5S_UNLIMITED 
-  //create the offsetdata-space...
-  auto d_space = H5Screate_simple(0,f_dims, max_dims); 
-  //create the attribute for the data space
-  auto d_attid = H5Screate(H5S_SIMPLE); //H5S_SIMPLE -->REGULAR ARRAY OF ELEMENTS.
-  auto plist_id = H5Pcreate(H5P_DATASET_CREATE);
-  hsize_t chunk_dim[1] = {batch};
-  H5Pset_chunk(plist_id,1,chunk_dim); 
-  auto d_id = H5Dcreate(group_id, offset_name.c_str(),H5T_NATIVE_INT,
-			d_space,H5P_DEFAULT,plist_id,H5P_DEFAULT);
-  //now write the info...
-  h5Dwrite(d_id,H5T_NATIVE_INT,H5T_NATIVE_INT,H5S_ALL,H5S_ALL,
-	   H5P_DEFAULT,&val);
-  return d_id;
-}
-
 std::vector<char>
 flatten_MPI(std::vector<std::vector<char>> const& tmp) {
   std::vector<char> tmp1 = tmp[0];
@@ -66,506 +29,203 @@ flatten_MPI(std::vector<std::vector<char>> const& tmp) {
   return tmp1;
 }
 
+//these variables to save info....
+std::map<std::string,dataset_info>list_createInfo;
+std::map<std::string, dataset_info>size_createInfo;
+int __tot_branches=0;
+bool Writing_Data=false;
+//end of these variables
 
+//*********************************************************************************//
+//only create the data-sets nothing else.
+int CreateDataSets(std::string branch_name,int buff_size,hid_t lumi_id){
+  int mpi_rank,mpi_size;
+  MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
+  MPI_Comm_size(MPI_COMM_WORLD,&mpi_rank);
+  hsize_t dimsf[1],
+    max_dims[1];  
 
-//now write into the data-sets....
-//should be able to extend the data-set and write into it.
+  dimsf[0]=0;
+  max_dims[0]=H5S_UNLIMITED;
+  hsize_t chunk_dims[1] = {static_cast<hsize_t>(buff_size*mpi_size)};
+  auto dspace_id = H5Screate_simple(1,dimsf,max_dims);
+  auto dplist_id = H5Pcreate(H5P_DATASET_CREATE);
 
-//now we write the metadata...where we store what the size of each event buffer is....
-hid_t WriteMetaData(std::string branch_name,char *buff_size, hid_t lumi_id){
-  auto plist_id = (size_createInfo[branch_name]).plist_id;
-  auto size_name = branch_name+"_size";
-  auto dataset_id = H5Dopen(lumi_id,size_name.c_str(),plist_id);
-  auto dspace_id = H5Dget_space(dataset_id);
-  auto ndims = H5Sget_simple_extent_ndims(dspace_id);
-  hsize_t num_blocks[1] = {1};
-  //get the old dimension....
-  hsize_t curr_dims[ndims];
-  H5Sget_simple_extent_dims(dspace_id,curr_dims,NULL);
-  //the size data-set will always have 1 data at a time....
-  hsize_t new_dims[1] = {curr_dims[0]+1};
-
-  //now extend the data-set to the new dimension...
-  auto status_id = H5Dset_extent(dataset_id,new_dims);
-
-  //get the hyperslab...
-  auto space_status = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,curr_dims,NULL,
-					  num_blocks,new_dims);
-
-
-  //new memory space based on the new buffer.....
-  auto mspace_id = H5Screate_simple(1,new_dims,NULL);
-
-  auto status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,mspace_id,dspace_id,H5P_DEFAULT,buff_size);
-
-  //make sure you write the data....otherwise no need to continue forward....
-  assert(status>=0);
-
-  return dataset_id;
-}
-
-
-hid_t WriteData(std::string branch_name, std::vector<char>buff, hid_t lumi_id,int _mpi_rank,int _mpi_size,int ievt,int x){
-  //maybe I need to send an empty buffer
-  if(ievt!=(_mpi_rank+x*_mpi_size)){
-    //   std::cout<<"Process not  handled "<<ievt<<" "<<x<<" "<<_mpi_rank<<std::endl;
-    return 0;
-  }
-   else{
-     std::cout<<"Process handled "<<ievt<<" "<<x<<" "<<_mpi_rank<<std::endl;
-   }
-  
-  //auto plist_id = (list_createInfo[branch_name]).plist_id;
-  auto mpi_size = static_cast<hsize_t>(_mpi_size);
-  auto mpi_rank = static_cast<hsize_t>(_mpi_rank);
-  auto curr_size = static_cast<unsigned long long>(buff.size());
-  auto dataset_id = H5Dopen(lumi_id,branch_name.c_str(),H5P_DEFAULT);
-  auto dspace_id = H5Dget_space(dataset_id);
-  auto ndims =  H5Sget_simple_extent_ndims(dspace_id);
-  hsize_t num_blocks[2] = {1,1};
-  //now the array to get the old dimension...
-  hsize_t curr_dims[ndims];
-  H5Sget_simple_extent_dims(dspace_id, curr_dims, NULL);
-
-  //now extended dataspace to accomodate the new data....
-  auto buff_size = static_cast<unsigned long long>(buff.size());
-  hsize_t new_dims[2] = {curr_dims[0],buff_size+curr_dims[1]};
-  //hoping this is what we want...
-  hsize_t offset[2] = {mpi_rank, curr_dims[1]};//{buff_size};
-  //  std::cout<<" curr_size "<<buff_size<<" "<<new_dims[0]<<" "<<ndims<<" "<<mpi_rank<<std::endl;
-
-  
-  //first extend the dataset...
-  auto status_id = H5Dset_extent(dataset_id,new_dims);
-  //apparently after extending the space, we need to get the space again...
-  //https://www.mail-archive.com/hdf-forum@hdfgroup.org/msg01283.html
-  
-  dspace_id = H5Dget_space(dataset_id);
-  hsize_t count[2] = {1,buff_size};
-  hsize_t stride[2] = {1,1};
-  //get the datas-space now...  
-  auto space_status = H5Sselect_hyperslab(dspace_id, H5S_SELECT_SET,offset ,stride,
-					  count,num_blocks);
-  //new memory space based on the new buffer....
-  auto mspace_id = H5Screate_simple(2,count,NULL);
-
-  //now write the buffer into the data....
-  char* _buff = buff.data();
-  auto status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,mspace_id,dspace_id,H5P_DEFAULT,_buff);
-  //make sure that you have written the data...otherwise no use to go forward...
-  assert(status>=0);
-  //make sure we write the meta-data as well....
-  char _buff_size[1] = {char(buff.size())};
-  //  auto meta_status = WriteMetaData(branch_name,_buff_size,lumi_id);
-
-  H5Sclose(mspace_id);
-  H5Sclose(dspace_id);
-  H5Dclose(dataset_id);
-  
-  return dataset_id;
-}
-
-
-void CloseDataSet(dataset_info dinfo){
-  H5Sclose(dinfo.memspace_id);
-  H5Sclose(dinfo.dspace_id);
-  H5Dclose(dinfo.dset_id);
-  H5Pclose(dinfo.plist_id);
-  
-}
-
-
-void CloseAllDataSets(){
-  for(auto dinfo:list_createInfo)CloseDataSet(dinfo.second);
-
-}
-
-
-dataset_info CreateMetaDataSets(std::string branch_name,char* buff_size, hid_t lumi_id){
-  hsize_t dimsf[1],//current dimension of the dataset
-    max_dims[1], //maximum allowed dimension of the dataset
-    mem_dims[1], // size of the memory dimension.
-    num_blocks[1], //number of blocks to be selected in the hyperslab.
-    hslab_start_pos[1]; // start position of the hyperslab...this is 0 when creating.
-
-    dimsf[0] = 1; 
-    max_dims[0] = H5S_UNLIMITED;
-    num_blocks[0]=1;
-    hslab_start_pos[0] = 0;
-    mem_dims[0] = 1; //the size info is just the integer type
-
-    auto dspace_id = H5Screate_simple(1, dimsf,max_dims);
-    auto plist_id = H5Pcreate(H5P_DATASET_CREATE);
-
-    H5Pset_chunk(plist_id,1,dimsf);
-    auto sz_name = branch_name+"_size";
-    auto dset_id = H5Dcreate(lumi_id,sz_name.c_str(),H5T_NATIVE_CHAR,dspace_id,H5P_DEFAULT,
-			     plist_id, H5P_DEFAULT);
-
-    auto ret = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,hslab_start_pos,
-				   NULL,num_blocks,dimsf);
-    assert(ret>=0);
-    auto mspace_id = H5Screate_simple(1,mem_dims,NULL);
-    auto status = H5Dwrite(dset_id,H5T_NATIVE_CHAR,mspace_id,
-			   dspace_id,H5P_DEFAULT,buff_size);
-    if(status<0)std::cout<<"Something went Wrong Size-DataSets "<<branch_name<<std::endl;
-
-    H5Sclose(mspace_id);
-    H5Sclose(dspace_id);
-    H5Dclose(dset_id);
-    H5Pclose(plist_id);
-
-    dataset_info dinfo;
-    dinfo.name = branch_name;
-    dinfo.dset_id = dset_id;
-    dinfo.dspace_id = dspace_id;
-    dinfo.dprop_id = plist_id;
-    dinfo.memspace_id = mspace_id;
-    dinfo.plist_id = plist_id;
-
-    return dinfo;
-}
-
-
-dataset_info Create2DDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id){
-
-  int _mpi_rank,_mpi_size;
-  MPI_Comm_size(MPI_COMM_WORLD,&_mpi_size);
-  MPI_Comm_rank(MPI_COMM_WORLD,&_mpi_rank);
-  
-  auto mpi_size = static_cast<hsize_t>(_mpi_size);
-  auto mpi_rank = static_cast<hsize_t>(_mpi_rank);
-
-  auto curr_size = static_cast<unsigned long long>(buff.size());
-
-  
-  hsize_t dimsf[2] = {mpi_size,curr_size};
-
-  hsize_t max_dims[2] = {mpi_size,H5S_UNLIMITED};
-
-  hsize_t num_blocks[2] = {1,curr_size};
-
-  hsize_t hslab_start_pos[2] = {mpi_rank,0};
-
-  hsize_t mem_dims[2] = {1,curr_size};
-  
-  
-  
-  auto dspace_id = H5Screate_simple(2,dimsf,max_dims);
-  assert(dspace_id>=0);
-  
-  auto plist_id = H5Pcreate(H5P_DATASET_CREATE);
-
-  
-  H5Pset_chunk(plist_id,2,dimsf);
-
-  auto dset_id = H5Dcreate(lumi_id,branch_name.c_str(),H5T_NATIVE_CHAR,
-			   dspace_id,H5P_DEFAULT,plist_id,H5P_DEFAULT);
-  auto xf_id = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
-
-  auto ret = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,hslab_start_pos,NULL,num_blocks,NULL);
-
-  assert(ret>=0);
-
-  auto mspace_id = H5Screate_simple(2,mem_dims,NULL);
-
-  assert(mspace_id>=0);
-
-  char *_buff = buff.data();
-  auto status = H5Dwrite(dset_id,H5T_NATIVE_CHAR,mspace_id,dspace_id,xf_id,_buff);
-
-  assert(status>=0);
-
-  // char buff_size = {char(buff.size())};
-  std::vector<char>buff_size = {char(buff.size())};
-  auto size_name = branch_name+"_size";
-  
-  dataset_info dinfo;
-
-  dinfo.name = branch_name;
-  dinfo.dset_id = dset_id;
-  dinfo.dspace_id = dspace_id;
-  dinfo.dprop_id = xf_id;
-  dinfo.memspace_id = mspace_id;
-  dinfo.plist_id = xf_id;
+  //This is a bit challenging. To guarantee the smooth IO all the IO processes should use same chunk dims.
+  H5Pset_chunk(dplist_id,1,chunk_dims);
+  auto dset_id = H5Dcreate(lumi_id,branch_name.c_str(),H5T_NATIVE_CHAR,dspace_id,
+			   H5P_DEFAULT,dplist_id,H5P_DEFAULT);
 
   MPI_Barrier(MPI_COMM_WORLD);
-
-  H5Sclose(mspace_id);
   H5Sclose(dspace_id);
   H5Dclose(dset_id);
-  H5Pclose(plist_id);
-  H5Pclose(xf_id);
+  H5Pclose(dplist_id);
 
-  return dinfo;
-  
-  
+  return mpi_rank;
 }
 
-hid_t Write2DData(std::string branch_name,std::vector<char>buff,hid_t lumi_id){
-  int _mpi_rank,_mpi_size;
-  MPI_Comm_size(MPI_COMM_WORLD,&_mpi_size);
-  MPI_Comm_rank(MPI_COMM_WORLD,&_mpi_rank);
-  
-  auto curr_size = static_cast<unsigned long long>(buff.size());
+//***********************************************************************************//
 
-  auto mpi_size = static_cast<hsize_t>(_mpi_size);
-  auto mpi_rank = static_cast<hsize_t>(_mpi_rank);
-  
 
-  auto dataset_id = H5Dopen(lumi_id,branch_name.c_str(),H5P_DEFAULT);
+//***********************************************************************************//
 
-  auto xf_id = H5Pcreate(H5P_DATASET_XFER);
-
-  H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
-  auto dspace_id = H5Dget_space(dataset_id);
-    
-  auto ndims = H5Sget_simple_extent_ndims(dspace_id);
-
-  hsize_t num_blocks[2] = {1,1};
-
-  hsize_t curr_dims[ndims];
-  H5Sget_simple_extent_dims(dspace_id,curr_dims,NULL);
-  
-  hsize_t new_dims[2] = {curr_dims[0],curr_size+curr_dims[1]};
-
-  hsize_t offset[2] = {mpi_rank,curr_dims[1]};
-
-  auto status_id = H5Dset_extent(dataset_id,new_dims);
-  
-  //apparently after extending the space, we need to get the space again...
-  //https://www.mail-archive.com/hdf-forum@hdfgroup.org/msg01283.html
-  
-  dspace_id = H5Dget_space(dataset_id);
-
-  hsize_t count[2] = {1,curr_size};
-  hsize_t stride[2] = {1,1};
-  auto space_status = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,offset,stride,
-					  count,num_blocks);
-
-  auto mspace_id = H5Screate_simple(2,count,NULL);
-  char* _buff = buff.data();
-
-  auto status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,mspace_id,dspace_id,
-			 xf_id,_buff);
-  assert(status>=0);
-  
-  H5Pclose(xf_id);
-  H5Sclose(mspace_id);
-  H5Sclose(dspace_id);
-  H5Dclose(dataset_id);
-
-  return dataset_id;  
-}
-
-hid_t Write1DData(std::string branch_name,std::vector<char>buff,hid_t lumi_id){
+int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int ievt){
   int mpi_rank,mpi_size;
   MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
   MPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
-  
+  //I think it is better to do everything in one go.
   auto curr_size = static_cast<unsigned long long>(buff.size());
-  int prev_nz,tot_nz;
-
-  int tot_size;
   int _curr_size = static_cast<int>(curr_size);
   
-  MPI_Scan(&_curr_size,&tot_size,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
-
-  
+  hsize_t buff_size[1] = {static_cast<hsize_t>(curr_size)};
   auto dataset_id = H5Dopen(lumi_id,branch_name.c_str(),H5P_DEFAULT);
-  auto xf_id = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
-  auto dspace_id = H5Dget_space(dataset_id);
+  std::string offset_name = branch_name+"_offset";
+  auto dataset_offset = H5Dopen(lumi_id,offset_name.c_str(),H5P_DEFAULT);
+  std::string size_name = branch_name+"_size";
+  auto dataset_size = H5Dopen(lumi_id,size_name.c_str(),H5P_DEFAULT);
 
-  auto ndims = H5Sget_simple_extent_ndims(dspace_id);
-  hsize_t num_blocks[1] = {1};
+  //do i need to do this each time I write buffer or it can be a one time thing
+
+  auto xf_id = H5Pcreate(H5P_DATASET_XFER);
+  auto xf_id_sz = H5Pcreate(H5P_DATASET_XFER);
+  auto xf_id_offset = H5Pcreate(H5P_DATASET_XFER);
+  
+  H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
+  
+  auto _dspace_id = H5Dget_space(dataset_id);
+  auto _dspace_offset = H5Dget_space(dataset_offset);
+  auto _dspace_size = H5Dget_space(dataset_size);
+  //okay the number of dims are going to be same for the meta-datasets as well.
+  auto ndims = H5Sget_simple_extent_ndims(_dspace_id);
 
   hsize_t curr_dims[ndims];
+  hsize_t curr_dims_sz[ndims];
+  hsize_t curr_dims_offset[ndims];
+  H5Sget_simple_extent_dims(_dspace_id,curr_dims,NULL);
+  H5Sget_simple_extent_dims(_dspace_size,curr_dims_sz,NULL);
+  H5Sget_simple_extent_dims(_dspace_offset,curr_dims_offset,NULL);
 
-  H5Sget_simple_extent_dims(dspace_id,curr_dims,NULL);
+  int tot_dims;
+  int _curr_dims = static_cast<int>(curr_dims[0]);
+
+  //probably need to scan 
   
-  //  auto err = MPI_Exscan(&curr_dims[0],&prev_nz,curr_size,MPI_CHAR,
-  //  		       MPI_SUM,MPI_COMM_WORLD);
-  //  printf("rank %d has %d elements, will start at %d\n", mpi_rank,
-  // 	 curr_size, prev_nz);
-  //here we want to make check the functionality of MPI_Scan as well...
-  // std::cout<<"current size "<<curr_size<<" "<<curr_dims[0]<<" "<<mpi_rank<<std::endl;
-  hsize_t new_dims[1] = {curr_size+curr_dims[0]+tot_size};
-  // std::cout<<"Current size "<<curr_size<<" Total Size "<<tot_size<<" "<<curr_size+curr_dims[0]+tot_size<<" "
-  //	   <<mpi_rank<<std::endl;
-  hsize_t offset[1] = {curr_dims[0]};
+  MPI_Scan(&_curr_dims,&tot_dims,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
+  int max_dims=0;
+  MPI_Reduce(&_curr_dims,&max_dims,1,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+
+  int tot_buff_size=0;
+  int int_buff_size=_curr_size;
+
+  MPI_Scan(&int_buff_size,&tot_buff_size,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
+  int max_buff_size=0;
+  MPI_Reduce(&tot_buff_size,&max_buff_size,1,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+
+  int parcel[2] = {max_dims,max_buff_size};
+
+  MPI_Bcast(&parcel,2,MPI_INT,0,MPI_COMM_WORLD);
   
+  hsize_t _tot_size = static_cast<hsize_t>(tot_buff_size);
+  hsize_t new_dims[1];
+  hsize_t offset[1];
+  hsize_t new_dims_sz[1];
+  hsize_t new_dims_offset[1];
+  hsize_t sz_offset[1];
+
+  if(ievt==0){
+    new_dims[0] = {_tot_size};
+    offset[0] = {_tot_size-buff_size[0]};
+    new_dims_sz[0] = {static_cast<hsize_t>(mpi_rank+1)};
+    sz_offset[0] = {static_cast<hsize_t>(mpi_rank)};
+  }
+  else{
+    new_dims[0] = {static_cast<hsize_t>(curr_dims[0]+parcel[1])};
+    offset[0] = {new_dims[0]-static_cast<hsize_t>(int_buff_size)};
+    new_dims_sz[0] = {curr_dims_sz[0]+static_cast<hsize_t>(mpi_size)};
+    //  sz_offset[0] = {new_dims_sz[0]+static_cast<hsize_t>(mpi_size-1)};
+    sz_offset[0] = {new_dims_sz[0]-1};
+  }
+
+#ifdef DEBUG
+  std::cout<<" Size "<<_tot_size<<" Curr Dims "<<curr_dims[0]<<" Buffer "
+	   <<int_buff_size<<" ievt "<<ievt<<" Branch name "<<branch_name
+	   <<" rank "<<mpi_rank<<std::endl;
+#endif
+
+
+#ifdef DEBUG
+  std::cout<<" Offset: New Dims "<<new_dims_sz[0]<<" offset "<<sz_offset[0]
+	   <<" rank "<<mpi_rank<<" ievt "<<ievt<<std::endl;
+#endif  
+  
+#ifdef DEBUG
+  std::cout<<" new dimension "<<new_dims[0]
+	   <<" offset "<<offset[0]<<" max buff size "<<max_buff_size
+	   <<" rank "<<mpi_rank<<std::endl;
+#endif
+  hsize_t count[1] = {1}; //This is what we will put for now...
   auto status_id = H5Dset_extent(dataset_id,new_dims);
+  auto status_sz = H5Dset_extent(dataset_size,new_dims_sz);
+  auto status_offset = H5Dset_extent(dataset_offset,new_dims_sz);
 
-  dspace_id = H5Dget_space(dataset_id);
-  hsize_t count[1] = {curr_size};
-  hsize_t stride[1] = {1};
-
-  auto space_status = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,
-					  offset,stride,count,num_blocks);
-
-  auto mspace_id =  H5Screate_simple(1,count,NULL);
-
-  char* _buff = buff.data();
-  // auto status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,
-  //			 mspace_id,dspace_id,xf_id,_buff);
-
-  // assert(status>=0);
-  char _buff_size[1] = {char(buff.size())};
-  H5Pclose(xf_id);
-  H5Sclose(mspace_id);
-  H5Sclose(dspace_id);
-  H5Dclose(dataset_id);
-  return dataset_id;
-
-}
-
-dataset_info Create1DDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id){
-
-  int mpi_rank,mpi_size;
-  MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
-  MPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
-
-  auto curr_size = static_cast<unsigned long long>(buff.size());
-  hsize_t num_blocks[1],hslab_start_pos[1];
-  hsize_t dimsf[1] = {curr_size};
-  hsize_t max_dims[1] = {H5S_UNLIMITED};
-  num_blocks[0] = curr_size;
-
-  hslab_start_pos[0] = 0;
-
-  hsize_t mem_dims[1]= {curr_size};
-
-  auto dspace_id = H5Screate_simple(1,dimsf,max_dims);
-
-  assert(dspace_id>=0);
-
-  auto plist_id = H5Pcreate(H5P_DATASET_CREATE); /*H5Pcreate(H5P_DATASET_CREATE);*/
+  //always remember after the extension, need to do this one more time:
+   _dspace_id = H5Dget_space(dataset_id);
+   _dspace_offset = H5Dget_space(dataset_offset);
+   _dspace_size = H5Dget_space(dataset_size);
   
-  H5Pset_chunk(plist_id,1,dimsf);
-  auto dset_id = H5Dcreate(lumi_id,branch_name.c_str(),H5T_NATIVE_CHAR,dspace_id,
-			   H5P_DEFAULT,plist_id,H5P_DEFAULT);
-  auto xf_id = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
+  auto space_status = H5Sselect_hyperslab(_dspace_id,H5S_SELECT_SET,
+					  offset,NULL,count,buff_size);
 
-  char* _buff = buff.data();
-  auto ret = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,hslab_start_pos,
-				 NULL,num_blocks,NULL);
+  space_status = H5Sselect_hyperslab(_dspace_offset,H5S_SELECT_SET,
+				     sz_offset,NULL,count,count);
 
-  assert(ret>=0);
+  space_status = H5Sselect_hyperslab(_dspace_size,H5S_SELECT_SET,
+				     sz_offset,NULL,count,count);
 
-  auto mspace_id = H5Screate_simple(1,mem_dims,NULL);
+  auto _mspace_id = H5Screate_simple(1,buff_size,NULL);
+  auto _mspace_sz = H5Screate_simple(1,count,NULL);
+  auto _mspace_offset= H5Screate_simple(1,count,NULL);
+  char *__buff = buff.data();
+  std::vector<char>__buff_sz_ = {static_cast<char>(_curr_size)};
+  std::vector<char>__buff_offset_ = {static_cast<char>(offset[0])};
 
-  assert(mspace_id>=0);
-  auto status = H5Dwrite(dset_id,H5T_NATIVE_CHAR,mspace_id,dspace_id,xf_id,_buff);
+  char *__buff_offset = __buff_offset_.data();
+  char *__buff_sz = __buff_sz_.data();
 
-  assert(status>=0);
+#ifdef DEBUG
+  std::cout<<" Size of Offset Buffer "<<__buff_offset_.size()<<
+    " Size of Sz Buffer "<<__buff_sz_.size()<<std::endl;
+#endif  
+  auto _status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,_mspace_id,
+  			  _dspace_id,xf_id,__buff);
+  assert(_status>=0);
+  
+   _status = H5Dwrite(dataset_offset,H5T_NATIVE_CHAR,_mspace_offset,
+  		     _dspace_offset,xf_id,__buff_offset);
+  assert(_status>=0);
 
-  char buff_size[1] = {char(buff.size())};
-
-  // auto size_info = CreateMetaDataSets(branch_name,buff_size,lumi_id);
-
-   //auto _err = H5Fflush(dset_id,H5F_SCOPE_LOCAL); 
-  // assert(_err>=0);
-  dataset_info dinfo;
-  dinfo.name = branch_name;
-  dinfo.dset_id = dset_id;
-  dinfo.dspace_id = dspace_id;
-  dinfo.dprop_id = xf_id;
-  dinfo.memspace_id = mspace_id;
-  dinfo.plist_id = xf_id;
-
+  _status = H5Dwrite(dataset_size,H5T_NATIVE_CHAR,_mspace_sz,
+		     _dspace_size,xf_id,__buff_sz);
+  assert(_status>=0);
+  
   MPI_Barrier(MPI_COMM_WORLD);
 
-  H5Sclose(mspace_id);
-  H5Sclose(dspace_id);
-  H5Dclose(dset_id);
-  H5Pclose(plist_id);
   H5Pclose(xf_id);
-  
- 
-
-  return dinfo;
-  
+  H5Pclose(xf_id_sz);
+  H5Pclose(xf_id_offset);
+  H5Sclose(_dspace_id);
+  H5Sclose(_dspace_offset);
+  H5Sclose(_dspace_size);
+  H5Sclose(_mspace_id);
+  H5Sclose(_mspace_sz);
+  H5Sclose(_mspace_offset);
+  H5Dclose(dataset_offset);
+  H5Dclose(dataset_size);
+  H5Dclose(dataset_id);
+  return dataset_id;
 }
 
-
-dataset_info CreateDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int _mpi_rank,int _mpi_size){
-  //I need to take care of both fundamental and non-fundamental branches....
-  //datasets are char type anyway.
-  //cast the integer to hsize_t
-  auto mpi_size = static_cast<hsize_t>(_mpi_size);
-  auto mpi_rank = static_cast<hsize_t>(_mpi_rank);
-  auto curr_size = static_cast<unsigned long long>(buff.size());
-  //hsize_t dimsf[2],max_dims[2],
-  hsize_t num_blocks[2],hslab_start_pos[2];
-  hsize_t dimsf[2] = {mpi_size,curr_size};
-  hsize_t max_dims[2] = {mpi_size,H5S_UNLIMITED};
-  num_blocks[0] = 1; //number of blocks we want is also the buffer size when writing for first time
-  num_blocks[1] = curr_size;
-  hslab_start_pos[0]=mpi_rank; //when creating, we are writing for the first time....
-  hslab_start_pos[1] = 0; 
-  //memory dimension is also probably the size of the buffer (always)
-  //
-
-  hsize_t mem_dims[2] = {0,curr_size};
-
-  //I think while creating the position is always (0,0)
-  hslab_start_pos[0] = mpi_rank;
-  hslab_start_pos[1] = 0;
-  auto dspace_id = H5Screate_simple(2,dimsf,max_dims);
-  assert(dspace_id>=0);
-  //auto plist_id = H5Pcreate(H5P_DATASET_XFER);//H5P_DATASET_CREATE-->Regular/ H5P_DATASET_XFER-->Collective
-   auto plist_id = H5Pcreate(H5P_DATASET_CREATE);
-  //  H5Pset_dxpl_mpio(plist_id,H5FD_MPIO_COLLECTIVE);
-  H5Pset_chunk(plist_id, 2,dimsf);
-
-  auto dset_id = H5Dcreate(lumi_id,branch_name.c_str(),H5T_NATIVE_CHAR,dspace_id,
-			   H5P_DEFAULT,plist_id,H5P_DEFAULT);
-
-  // auto dset_id = H5Dcreate(lumi_id,branch_name.c_str(),H5T_NATIVE_CHAR,dspace_id,
-  //			     H5P_DEFAULT,H5P_DEFAULT,H5P_DEFAULT);
-
-  char* _buff = buff.data();
-  std::cout<<"Size of the buffer "<<buff.size()<<" "<<mpi_rank<<std::endl;
-    
-  //Select the hyperslab to write
-  auto ret = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,hslab_start_pos,
-				 NULL,num_blocks,NULL);
-  assert(ret>=0);
-  //H5Pset_chunk(plist_id, 1,dimsf);
-  //create a memory dataspace for write buffer..
-  auto mspace_id = H5Screate_simple(2,mem_dims,NULL);
-
-  auto status = H5Dwrite(dset_id,H5T_NATIVE_CHAR,mspace_id,dspace_id,H5P_DEFAULT,_buff);
-  if(status<0)std::cout<<"Something Went wrong "<<branch_name<<std::endl;
-  assert(status>=0);
-  //now the status of the CreateMetaData now...
-  char buff_size[1] = {char(buff.size())};
-  auto size_info = CreateMetaDataSets(branch_name,buff_size,lumi_id);
-  size_createInfo[branch_name] = size_info;
-  dataset_info dinfo;
-  dinfo.name = branch_name;
-  dinfo.dset_id = dset_id;
-  dinfo.dspace_id = dspace_id;
-  dinfo.dprop_id = plist_id;
-  dinfo.memspace_id = mspace_id;
-  dinfo.plist_id = plist_id;
-  //close everything....
-  //we will try to close these in once we finish reading and writing....
-  
-  H5Sclose(mspace_id);
-  H5Sclose(dspace_id);
-   H5Dclose(dset_id);
-  H5Pclose(plist_id);
-  std::cout<<"Finished Creating "<<std::endl;
-  return dinfo;
-  
-}
-
-
-
+//***********************************************************************************//
 
 void write_1D_chars_MPI(std::vector<product_t> const& products, 
 			std::vector<std::string> const& ds_names, 
@@ -573,7 +233,7 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
 			long unsigned int nbatch, 
 			long unsigned int round,
 			hid_t lumi_id,int mpi_rank,
-			int mpi_size, int ievt,int x) 
+			int mpi_size, int ievt) 
 {
   auto num_prods = ds_names.size();
   for(int prod_index = 0;prod_index<num_prods;++prod_index){
@@ -584,41 +244,18 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
     auto sizes1 = get_sizes1D(tmp1);
     auto ds_name = ds_names[prod_index];
     auto sum_prods = std::accumulate(sizes.begin(),sizes.end(),0);
+    if(sum_prods==0)continue;
     std::vector<char>sz_vector = {char(tmp1.size())};
     auto szds_name = ds_name+"_sz";
     auto offset_name = ds_name+"_offset";
-    // auto dset_id = H5Dopen1(lumi_id,ds_name.c_str());
-    //if(!dset_id){
-    // if(sum_prods==0)continue; //skip the empty buffers for now....
-    //check the number of entries in these branches.
+    auto status = WriteDataSets(ds_name,tmp1,lumi_id,ievt);
 
-     
-    if(list_createInfo.size()!=__tot_branches){
-      	auto dset_info =  Create1DDataSets(ds_name,tmp1,lumi_id);
-      	list_createInfo[ds_name] = dset_info;
-	auto temp = Create1DDataSets(ds_name+"_size",sz_vector,lumi_id);
-	  
-
-    }
-
-    else{
-      // std::cout<<list_createInfo.size()<<" "<<__tot_branches<<std::endl;
-      	auto status = Write1DData(ds_name,tmp1,lumi_id);
-      	assert(status>=0);
-	//	status = Write2DData(ds_name+"_size",sz_vector,lumi_id);
-      //	assert(status>=0);
-    }
-    
   }
-
 }
-
-
-
 
 void SetTotalBranches(int nbranch){
   __tot_branches=nbranch;
 }
-
+//***********************************************************************************//
 
 #endif
