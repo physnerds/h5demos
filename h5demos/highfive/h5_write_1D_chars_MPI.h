@@ -6,8 +6,6 @@
 //#include "mpi.h"
 //#include "h5_setup_mpi.h
 #define DEBUG
-//eventually need to get rid of highfive...
-using namespace HighFive;
 using product_t = std::vector<char>;
 
 struct dataset_info{

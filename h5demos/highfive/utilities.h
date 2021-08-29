@@ -2,7 +2,6 @@
 #define UTILITIES_H
 
 
-using namespace HighFive;
 using product_t = std::vector<char>;
 
 
