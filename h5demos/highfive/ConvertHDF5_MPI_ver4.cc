@@ -34,14 +34,6 @@
 using namespace HighFive;
 using product_t = std::vector<char>;
 
-#define RANK 2 //This is not MPI RANK
-#define NAME_LENGTH 17
-#define DATASETNAME "CCQENu"
-//#define GROUPNAME "lumi"
-#define NX 8
-#define NY 4
-#define CH_NX 2
-#define CH_NY 2
 
 
 void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std::string const& outname ){
@@ -58,13 +50,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
   hid_t fapl_id;     //File access property list
   hid_t run,lumi;   //Group ID
   hid_t dset_id;    // DataSet ID
-  hid_t chunk_id;   //Chunk ID
-  hid_t file_space_id;     // File DataSpace ID
-  hsize_t file_dims[RANK];
-  hsize_t max_dims[RANK];
-  hsize_t chunk_dims[RANK];
-  hsize_t dimsf[2];
-  herr_t ret;     // Generic return value (whatever it means...)
+  hid_t ret;
   std::vector<product_t>products;
   char groupname[16];
   std::string ntuple_name = "ccqe_data";
@@ -162,7 +148,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
 
     //Creating part is done....now the filling part.
-    // nentries = 97;
+     nentries = global_size*10;
     int niter = nentries/global_size;
     int remainder = nentries%global_size;
 
