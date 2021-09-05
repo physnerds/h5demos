@@ -16,7 +16,7 @@ $cmake -DCMAKE_CXX_COMPILER=/blues/gpfs/software/centos7/spack/opt/spack/linux-c
 $make;
 
 To test without MPI:
-$./Convert_MPI_ver4
+$./Convert_MPI_ver4 ../rfiles/For_TMVA_DATA_minervame5A6A6B_kludged_red.root 1 blaa.h5
 
 To test with the MPI:
 (In this example running 3 MPI processes)
