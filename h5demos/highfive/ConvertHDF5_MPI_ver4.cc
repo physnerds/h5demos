@@ -22,6 +22,8 @@
 #include <iostream>
 #include <stdlib.h>
 #include <iomanip>
+#include <unistd.h>
+#include <algorithm>
 #include "TH1D.h"
 #include "TChain.h"
 #include "TH2D.h"
@@ -43,6 +45,8 @@ using product_t = std::vector<char>;
 #define CH_NX 2
 #define CH_NY 2
 
+//#define EXTRAS
+//#define WAIT
 
 void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std::string const& outname ){
   int argc; char **argv;
@@ -69,7 +73,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
   char groupname[16];
   std::string ntuple_name = "ccqe_data";
 
-
+  initial_time = std::time(nullptr);
   
   MPI_Initialized(&flag);
   if(!flag)MPI_Init(&argc,&argv);
@@ -93,6 +97,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
   //lets try to put the barrier and see if I can get rid of the error::
   // MPI_Barrier(MPI_COMM_WORLD);
   //now lets try to setup the file access property list with parallel I/O access
+  
   auto plist_id = H5Pcreate (H5P_FILE_ACCESS);
   //make sure that we have created the file access property list...
   assert(plist_id>0);
@@ -132,6 +137,11 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     auto classes = return_classes(l);
     auto dset_names = return_dsetnames(l);
     std::cout<<"Total Number of Entries are "<<nentries<<" Total Branches "<<tot_branches<<std::endl;
+    /*
+    std::vector<std::string>dset_names = {dset_names_[1],dset_names_[0]};
+    tot_branches = 2;
+    std::vector<TClass*>classes = {classes_[1],classes_[0]};
+    */
     for(Long64_t jentry=0;jentry<tot_branches;++jentry)
       {
       //I guess we can take the buffer info from here....
@@ -143,34 +153,49 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 	  //DataSet for the actual branch
 	  CreateDataSets(branch_name,blob.size(),lumi);
 	  //where does a particular buffer starts?
-	  CreateDataSets(branch_name+"_offset",1,lumi);
+#ifdef EXTRAS
+	  CreateDataSets(branch_name+"_offset",8,lumi);
 	  //what is the length of that buffer?
-	  CreateDataSets(branch_name+"_size",1,lumi);
-	  
+	  CreateDataSets(branch_name+"_size",8,lumi);
+#endif
 	}
 	else{
 	  auto blob = return_blob(branch,classes[jentry]);
 	  CreateDataSets(branch_name,blob.size(),lumi);
 	  //where does a particular buffer starts?
-	  CreateDataSets(branch_name+"_offset",1,lumi);
+#ifdef EXTRAS	  
+	  auto sz_blob = GetMemcpyArray(blob.size());
+	  CreateDataSets(branch_name+"_offset",sz_blob.size(),lumi);
 	  //what is the length of that buffer?
-	  CreateDataSets(branch_name+"_size",1,lumi);
+	  CreateDataSets(branch_name+"_size",sz_blob.size(),lumi);
+#endif
 	  
 	}
-
+#ifdef WAIT	  
+  if(global_rank==0){
+    MPI_Request requests[global_size-1];
+    for(int i = 1;i<global_size;i++){
+      MPI_Isend(&i,1,MPI_INT,i,global_rank,MPI_COMM_WORLD,&requests[i-1]);
+    }
+    MPI_Waitall(global_size-1,requests,MPI_STATUSES_IGNORE);
+  }
+  else{
+    int received;
+    MPI_Recv(&received, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  }
+  
+#endif
       }
 
 
     //Creating part is done....now the filling part.
-    // nentries = 97;
+    nentries = 5;
     int niter = nentries/global_size;
     int remainder = nentries%global_size;
 
     std::cout<<"Total Entries "<<nentries<<" "<<niter*global_size+remainder
 	     <<" Iter "<<niter<<" Remainder "<<remainder<<std::endl;
     //exit(1);
-    SetTotalBranches(tot_branches);
-
     MPI_Barrier(MPI_COMM_WORLD);
 
     for(int i=0;i<niter;i++){
@@ -179,6 +204,8 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
       for(Long64_t jentry=0;jentry<tot_branches;++jentry){
 	auto b = dynamic_cast<TBranch*>((*l)[jentry]);
 	auto dataprod_name = b->GetName();
+	std::cout<<"Event: "<<j<<" Name Read "<<dataprod_name<<" "
+		 <<global_rank<<" "<<i<<std::endl;
 	if(classes[jentry]==nullptr){
 	  auto blob = return_fundamental_blobs(b);
 	  products.push_back(blob);
@@ -191,50 +218,61 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
       }
       nbatch++;
       if(nbatch==batch||j==niter*global_size-1){
-	int rank = GetMPILocalRank();
+#ifdef DEBUG
+	std::cout<<" Writing for "<<i<<" "<<j<<" "<<global_rank
+		 <<std::endl;
+#endif
 	write_1D_chars_MPI(products,dset_names,batch,nbatch,
-			   round,lumi,global_rank,global_size,i);
-
+			   round,lumi,global_rank,global_size,i,j);
 	nbatch=0;
 	products.clear();
 	++round;
 
       }
 
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    //now for the remainder...
-    for(Long64_t jentry=niter*global_size;jentry<nentries;jentry++){
-      auto j = jentry+global_rank;
-      e->GetEntry(j);
-      for(Long64_t jentry=0;jentry<tot_branches;++jentry){
-	auto b = dynamic_cast<TBranch*>((*l)[jentry]);
-	auto dataprod_name = b->GetName();
-	if(classes[jentry]==nullptr){
-	  auto blob = return_fundamental_blobs(b);
-	  products.push_back(blob);
-	}
-	else{
-	  auto blob = return_blob(b,classes[jentry]);
-	  products.push_back(blob);
-	}
-
-      }
-      nbatch++;
-      if(nbatch==batch||j==niter*global_size-1){
-	int rank = GetMPILocalRank();
-	write_1D_chars_MPI(products,dset_names,batch,nbatch,
-			   round,lumi,global_rank,global_size,i);
-
-	nbatch=0;
-	products.clear();
-	++round;
-
-      }
-      
     }
     
+#ifdef BETA    
+    //   MPI_Barrier(MPI_COMM_WORLD);
+    //now for the remainder...
+    //This Part is not working right now....
+    if(remainder!=0){
+      for(Long64_t jentry=niter*global_size+1;jentry<nentries;jentry++){
+	auto j = jentry;
+	e->GetEntry(j);
+	for(Long64_t jentry=0;jentry<tot_branches;++jentry){
+	  auto b = dynamic_cast<TBranch*>((*l)[jentry]);
+	  auto dataprod_name = b->GetName();
+	  std::cout<<"Remainder Event "<<j<<" Name "<<dataprod_name<<" "
+		   <<global_rank<<std::endl;
+	  if(classes[jentry]==nullptr){
+	    auto blob = return_fundamental_blobs(b);
+	    products.push_back(blob);
+	  }
+	  else{
+	    auto blob = return_blob(b,classes[jentry]);
+	    products.push_back(blob);
+	  }
+	  
+	}
+	nbatch++;
+	if(nbatch==batch||j==niter*global_size-1){
+	  int rank = GetMPILocalRank();
+	  write_1D_chars_MPI(products,dset_names,batch,nbatch,
+			     round,lumi,global_rank,global_size,i,j);
+	  
+	  nbatch=0;
+	  products.clear();
+	  ++round;
+	  // MPI_Barrier(MPI_COMM_WORLD);
+	}
+	
+      }
+    }
+#endif
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    /*
     size_t obj_id = H5Fget_obj_count(file_id,H5F_OBJ_ALL);
     std::cout<<"Total Open Objects are "<<obj_id<<" in rank "<<global_rank<<std::endl;
 
@@ -252,7 +290,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
     obj_id = H5Fget_obj_count(file_id,H5F_OBJ_FILE);
     std::cout<<"Total Open files are "<<obj_id<<" in rank "<<global_rank<<std::endl;    
-
+    */
     
     H5Sclose(scalar_id);
     H5Sclose(lumi_att_id);
@@ -268,8 +306,47 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     //in the end close the file.
 
     //lets check the number of open obj id in case there are any....
+#ifdef DEBUG
+    std::cout<<" Done with IO "<<global_rank<<std::endl;
+#endif
+    size_t obj_id = H5Fget_obj_count(file_id,H5F_OBJ_ALL);
+    std::cout<<"Total Open Objects are "<<obj_id<<" in rank "<<global_rank<<std::endl;
+
+    obj_id = H5Fget_obj_count(file_id,H5F_OBJ_GROUP);
+    std::cout<<"Total Open groups are "<<obj_id<<" in rank "<<global_rank<<std::endl;
+    
+    obj_id = H5Fget_obj_count(file_id,H5F_OBJ_DATATYPE);
+    std::cout<<"Total Open datatypes are "<<obj_id<<" in rank "<<global_rank<<std::endl;
+
+    obj_id = H5Fget_obj_count(file_id,H5F_OBJ_DATASET);
+    std::cout<<"Total Open datasets are "<<obj_id<<" in rank "<<global_rank<<std::endl;    
+    
+    obj_id = H5Fget_obj_count(file_id,H5F_OBJ_ATTR);
+    std::cout<<"Total Open attributes are "<<obj_id<<" in rank "<<global_rank<<std::endl;
+    obj_id = H5Fget_obj_count(file_id,H5F_OBJ_FILE);
+    std::cout<<"Total Open files are "<<obj_id<<" in rank "<<global_rank<<std::endl;
+
+
+
+    
+    hid_t data_id;
+    auto ds_id = H5Dopen(file_id,"/run/lumi/Q2",data_id);
+    auto _dsp_id = H5Dget_space(ds_id);
+    hsize_t dims[1];
+    H5Sget_simple_extent_dims(_dsp_id,dims,NULL);
+    std::cout<<" Test var dims later "<<dims[0]<<" "<<global_rank<<std::endl;
+    H5Sclose(_dsp_id);
+    H5Dclose(ds_id);
+    MPI_Barrier(MPI_COMM_WORLD);
+#ifdef DEBUG
+    int tot_ranks= 0;
+    MPI_Scan(&global_rank,&tot_ranks,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
+    std::cout<<" Total Ranks "<<tot_ranks<<" "<<global_rank<<std::endl;
+#endif
     H5Fclose(file_id);
-    MPI_Finalize();
+    //MPI_Finalize();
+    std::cout<<"END OF THE CODE "<<global_rank<<std::endl;
+
 }
 
 
@@ -298,9 +375,13 @@ int main(int argc, char* argv[]){
     exit ( 1 );
   }
 
-  // MPI_Comm_rank(MPI_COMM_WORLD,&rank);
-
+   MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+  double st_time = MPI_Wtime();
   ConvertHDF5_MPI(input_filename,batch_size,run_num,lumi_num,outname);
-  // MPI_Finalize(); //for some reason, I cannot finalize the mpich routine
+  double end_time = MPI_Wtime();
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  std::cout<<" Rank "<<rank<<" Processing Time: "<<end_time-st_time<<std::endl;
+  //MPI_Finalize();
   return 1;
   }
