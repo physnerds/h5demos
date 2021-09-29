@@ -149,9 +149,10 @@ void WriteBufferAndSendMessageSerial(hid_t dataset_id,hid_t mspace_id,hid_t dspa
 //***********************************************************************************//
 
 int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int ievt, int tentry,int mpi_rank,int mpi_size){
-  //  int mpi_rank,mpi_size;
-  //  MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
-  //  MPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
+  // int _mpi_rank,_mpi_size;
+  // MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
+    //    MPI_Comm_rank(MPI_COMM_WORLD,&_mpi_rank);
+
   //I think it is better to do everything in one go.
   auto curr_size = static_cast<unsigned long long>(buff.size());
   int _curr_size = static_cast<int>(curr_size);
@@ -233,26 +234,43 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
 
 #ifdef DEBUG
   std::cout<<" Scan Result "<<parcel[0]<<" "<<parcel[1]<<" "
-	   <<mpi_rank<<std::endl;
+	   <<tot_buff_size<<" "<<mpi_rank<<std::endl;
 
 #endif
+
+      //Quao:
+    //Use the total data-set size (i.e. for all ranks the mpi-ranks should be Tot-Buff Size
+    //Same data-set but different offsets.
+    //MEm space and dspace can be different based on buffer info
+    //Chris:
+    //What if each events have different size?
+    //But only We can do it with Scan and do the synchronization
   
  
   if(ievt==0){
-    new_dims[0] = {_tot_size};
-    offset[0] = {_tot_size-buff_size[0]};
+
+    
+    //    new_dims[0] = {_tot_size};
+    //  offset[0] = {_tot_size-buff_size[0]};
     new_dims_sz[0] = {static_cast<hsize_t>(mpi_rank+1)};
     sz_offset[0] = {static_cast<hsize_t>(mpi_rank)};
   }
   
   else{
-    new_dims[0] = {static_cast<hsize_t>(curr_dims[0]+parcel[1])};
-    offset[0] = {new_dims[0]-static_cast<hsize_t>(int_buff_size)};
+    // new_dims[0] = {static_cast<hsize_t>(curr_dims[0]+parcel[1])};
+    // offset[0] = {new_dims[0]-static_cast<hsize_t>(int_buff_size)};
     new_dims_sz[0] = {curr_dims_sz[0]+static_cast<hsize_t>(mpi_size)};
     //  sz_offset[0] = {new_dims_sz[0]+static_cast<hsize_t>(mpi_size-1)};
     sz_offset[0] = {new_dims_sz[0]-1};
   }
-
+  if(ievt==0){
+  new_dims[0] = {static_cast<hsize_t>(parcel[1])};
+  offset[0] = {static_cast<hsize_t>(tot_buff_size-int_buff_size)};
+  }
+  else{
+    new_dims[0] = {static_cast<hsize_t>(curr_dims[0]+parcel[1])};
+    offset[0] = {curr_dims[0]+static_cast<hsize_t>(tot_buff_size-int_buff_size)};
+  }
 #ifdef DEBUG
   std::cout<<" Size "<<_tot_size<<" Curr Dims "<<curr_dims[0]<<" Buffer "
 	   <<int_buff_size<<" ievt "<<ievt<<" Branch name "<<branch_name
@@ -271,12 +289,18 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
 	   <<" rank "<<mpi_rank<<std::endl;
 #endif
   hsize_t count[1] = {1}; //This is what we will put for now...
+  //Chris: Should be extend before the BCast(?)....
+  //Scan then add (pre allocate the value) and then BCast after extension and only after the bcast
+  //Try writing events.
+
+  //Quio: Extension still is also synchronization
   auto status_id = H5Dset_extent(dataset_id,new_dims);
 #ifdef EXTRAS
   auto status_sz = H5Dset_extent(dataset_size,new_dims_sz);
   auto status_offset = H5Dset_extent(dataset_offset,new_dims_sz);
 #endif
   //always remember after the extension, need to do this one more time:
+  // Quio : Need to close the dataspace again before getting the updated data-set
    _dspace_id = H5Dget_space(dataset_id);
 
    
@@ -331,6 +355,13 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
 			    mpi_rank,mpi_size);
 
 #endif
+
+  //Qiao: H5DWrite: Skip for example an event by rank 1 (if the program runs then it is not collective)
+  //If collective, the program gets stuck and needs to be terminated manually.
+  //Print out the dataspace/memory space should have different numbers for each entry for each mpi-rank
+  
+  
+
   
 #ifndef TEST
   auto _status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,_mspace_id,
@@ -409,6 +440,18 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
 
 //***********************************************************************************//
 
+
+void write_1D_chars_MPI_2(std::vector<char>const& products,
+			  std::string ds_name,
+			  long unsigned int batch,
+			  long unsigned int round,
+			  hid_t lumi_id,int mpi_rank,
+			  int mpi_size,int ievt, int tentry){
+  auto prod_size = products.size();
+  auto status = WriteDataSets(ds_name,products,lumi_id,ievt,tentry,mpi_rank,mpi_size);
+  
+}
+
 void write_1D_chars_MPI(std::vector<product_t> const& products, 
 			std::vector<std::string> const& ds_names, 
 			long unsigned int batch, 
@@ -448,8 +491,9 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
     auto szds_name = ds_name+"_sz";
     auto offset_name = ds_name+"_offset";
     auto status = WriteDataSets(ds_name,tmp1,lumi_id,ievt,tentry,mpi_rank,mpi_size);
-    MPI_Barrier(MPI_COMM_WORLD);
+
   }
+  MPI_Barrier(MPI_COMM_WORLD);
 }
 
 void SetTotalBranches(int nbranch){
