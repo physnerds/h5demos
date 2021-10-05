@@ -307,7 +307,7 @@ int WriteDataSetsSerial(std::string branch_name,std::vector<char>buff,hid_t lumi
   int _curr_dims_offset = static_cast<int>(curr_dims_offset[0]);
   hsize_t new_dims_offset[1] = {curr_dims_offset[0]+1};
 
- hsize_t offset_offset[1] = {static_cast<hsize_t>(mpi_rank)+curr_dims_offset[0]};
+ hsize_t offset_offset[1] = {curr_dims_offset[0]};
  
   
   auto status_id = H5Dset_extent(dataset_id,new_dims);
@@ -326,10 +326,16 @@ int WriteDataSetsSerial(std::string branch_name,std::vector<char>buff,hid_t lumi
   auto _mspace_id = H5Screate_simple(1,buff_size,NULL);
   assert(H5Sselect_all(_mspace_id)>=0);
 
+  auto _mspace_offset = H5Screate_simple(1,count, NULL);
   
   char *__buff = buff.data();
   auto _status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,_mspace_id,_dspace_id,
 			  xf_id,__buff);
+
+  std::vector<int>_buff_offset = {_curr_dims};
+  int *__buff_offset = _buff_offset.data();
+  _status = H5Dwrite(dataset_offset,H5T_NATIVE_INT,_mspace_offset,
+		     _dspace_offset,xf_id_offset,__buff_offset);
 
 
   assert(H5Pclose(xf_id)>=0);
@@ -337,6 +343,10 @@ int WriteDataSetsSerial(std::string branch_name,std::vector<char>buff,hid_t lumi
   assert(H5Sclose(_mspace_id)>=0);
   assert(H5Dclose(dataset_id)>=0);
 
+  assert(H5Pclose(xf_id_offset)>=0);
+  assert(H5Sclose(_dspace_offset)>=0);
+  assert(H5Sclose(_mspace_offset)>=0);
+  assert(H5Dclose(dataset_offset)>=0);  
   return dataset_id;
 
 }
