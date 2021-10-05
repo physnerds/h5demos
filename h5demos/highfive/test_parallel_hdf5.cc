@@ -15,7 +15,7 @@
 #include <iostream>
 #include <stdlib.h>
 #include <iomanip>
-
+#include <cassert>
 #include "hdf5.h"
 #include "h5_setup_mpi.h"
 #include "mpi.h"
