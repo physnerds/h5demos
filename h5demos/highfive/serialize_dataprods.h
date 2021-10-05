@@ -51,7 +51,22 @@ std::vector<char> return_blob(TBranch* b, TClass* c) {
 }
 
 
+const char* return_datatype(TBranch *b){
+  TClass *class_ptr = nullptr;
+  EDataType type;
+  b->GetExpectedType(class_ptr,type);
+  if(class_ptr!=nullptr){
+    return b->GetClassName();
 
+  }
+  else{
+    auto leaves = b->GetListOfLeaves();
+    auto leaf = dynamic_cast<TLeaf*>((*leaves)[0]);
+    auto _val = leaf->GetTypeName();
+    return _val;
+
+  }
+}
 
 std::vector<char>return_fundamental_blobs(TBranch *b){
   TBufferFile bufferFile{TBuffer::kWrite};

@@ -35,8 +35,6 @@ set (libraries ${libraries}
 
 
 
-add_executable(ConvertHDF5 ConvertHDF5.cc)
-target_link_libraries(ConvertHDF5 ${libraries})
 
 
 add_executable(ConvertHDF5_MPI_ver4 ConvertHDF5_MPI_ver4.cc)
