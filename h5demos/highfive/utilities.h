@@ -2,6 +2,11 @@
 #define UTILITIES_H
 
 
+#include <string>
+#include <vector>
+#include <iostream>
+#include <stdlib.h>
+
 using product_t = std::vector<char>;
 
 
