@@ -1,20 +1,12 @@
 #ifndef H5_WRITE_CHARS_H
 #define H5_WRITE_CHARS_H
 
-#include <highfive/H5DataSet.hpp>
-#include <highfive/H5DataSpace.hpp>
-#include <highfive/H5DataType.hpp>
-#include <highfive/H5File.hpp>
 
-
-#include "h5_write_1D_chars.h"
+//#include "h5_write_1D_chars.h"
 #include "h5_write_1D_chars_MPI.h"
 #include "serialize_dataprods.h"
 #include "utilities.h"
 
-
-//#include "dkmeta.h"
-#include "dk2nu.h"
 
 #include <string>
 #include <cstddef>
@@ -29,7 +21,6 @@
 #include "TH2D.h"
 #include "TFile.h"
 #include "hdf5.h"
-#include "h5_setup_mpi.h"
 #include "mpi.h"
 #include "H5FDmpio.h"
 using product_t = std::vector<char>;
@@ -101,15 +92,12 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     auto lumi_att_id = H5Screate(H5S_SCALAR);
     auto lumi_attr = H5Acreate(lumi,lumi_name,H5T_NATIVE_INT,lumi_att_id,H5P_DEFAULT,H5P_DEFAULT);
 
+   
     
-    std::cout<<" Am I here Yet "<<std::endl;
-    
-    auto f = TFile::Open(input_file_dir);
-    std::cout<<" Am I here Yet 2"<<std::endl; 
+    auto f = TFile::Open(input_file_dir); 
     auto e = (TTree*)f->Get(ntuple_name.c_str());
     auto l = e->GetListOfBranches();
-    //get the total number of branches....
-     std::cout<<" Am I here Yet 3"<<std::endl;  
+    //get the total number of branches.... 
     int nbatch = 0;
     int round = 0;
     auto nentries = e->GetEntriesFast();
@@ -127,44 +115,17 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
       //I guess we can take the buffer info from here....
 	e->GetEntry(0);	
 	auto branch = dynamic_cast<TBranch*>((*l)[jentry]);
-	std::string branch_name = branch->GetName();
+	std::string branch_name = branch->GetName(); 
 	if(classes[jentry]==nullptr){
 	  auto blob = return_fundamental_blobs(branch);
 	  //DataSet for the actual branch
-	  CreateDataSets(branch_name,blob.size(),lumi);
-	  //where does a particular buffer starts?
-#ifdef EXTRAS
-	  CreateDataSets(branch_name+"_offset",8,lumi);
-	  //what is the length of that buffer?
-	  CreateDataSets(branch_name+"_size",8,lumi);
-#endif
+	  CreateDataSets(branch,blob.size(),lumi);
 	}
 	else{
 	  auto blob = return_blob(branch,classes[jentry]);
-	  CreateDataSets(branch_name,blob.size(),lumi);
-	  //where does a particular buffer starts?
-#ifdef EXTRAS	  
-	  auto sz_blob = GetMemcpyArray(blob.size());
-	  CreateDataSets(branch_name+"_offset",sz_blob.size(),lumi);
-	  //what is the length of that buffer?
-	  CreateDataSets(branch_name+"_size",sz_blob.size(),lumi);
-#endif
+	  CreateDataSets(branch,blob.size(),lumi);
 	  
 	}
-#ifdef WAIT	  
-  if(global_rank==0){
-    MPI_Request requests[global_size-1];
-    for(int i = 1;i<global_size;i++){
-      MPI_Isend(&i,1,MPI_INT,i,global_rank,MPI_COMM_WORLD,&requests[i-1]);
-    }
-    MPI_Waitall(global_size-1,requests,MPI_STATUSES_IGNORE);
-  }
-  else{
-    int received;
-    MPI_Recv(&received, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  }
-  
-#endif
       }
 
 
@@ -175,7 +136,6 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
     std::cout<<"Total Entries "<<nentries<<" "<<niter*global_size+remainder
 	     <<" Iter "<<niter<<" Remainder "<<remainder<<std::endl;
-    //exit(1);
     MPI_Barrier(MPI_COMM_WORLD);
 
     for(int i=0;i<niter;i++){
@@ -184,8 +144,10 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
       for(Long64_t jentry=0;jentry<tot_branches;++jentry){
 	auto b = dynamic_cast<TBranch*>((*l)[jentry]);
 	auto dataprod_name = b->GetName();
+	/*
 	std::cout<<"Event: "<<j<<" Name Read "<<dataprod_name<<" "
 		 <<global_rank<<" "<<i<<std::endl;
+	*/
 	if(classes[jentry]==nullptr){
 	  auto blob = return_fundamental_blobs(b);
 	  products.push_back(blob);
@@ -194,14 +156,10 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 	  auto blob = return_blob(b,classes[jentry]);
 	  products.push_back(blob);
 	}
-	//	write_1D_chars_MPI_2(products[0],dataprod_name,batch,round,lumi,global_rank,global_size,i,j);
       }
       nbatch++;
       if(nbatch==batch||j==niter*global_size-1){
-#ifdef DEBUG
-	std::cout<<" Writing for "<<i<<" "<<j<<" "<<global_rank
-		 <<std::endl;
-#endif
+
 	write_1D_chars_MPI(products,dset_names,batch,nbatch,
 			   round,lumi,global_rank,global_size,i,j,false);
 	
