@@ -25,7 +25,7 @@ template<typename T>
 std::vector<T> DataArray(std::string hfilename,std::string ds_name,hid_t data_type){
   hid_t file_id = H5Fopen(hfilename.c_str(),H5F_ACC_RDONLY,H5P_DEFAULT);
   hid_t ds_id;
-  auto ds_info_id = H5Dopen(file_id,ds_name.c_str(),ds_id);
+  auto ds_info_id = H5Dopen(file_id,ds_name.c_str(),H5P_DEFAULT);
   assert(ds_info_id>=0);
   auto dspace_info_id = H5Dget_space(ds_info_id);
   assert(dspace_info_id>=0);
@@ -40,10 +40,7 @@ std::vector<T> DataArray(std::string hfilename,std::string ds_name,hid_t data_ty
   assert(H5Dclose(ds_info_id)>=0);
   std::vector<T>vec_container;
   for(int i=0;i<dims_info[0];i++)vec_container.push_back(data_container[i]);
-  /*
-  vec_container.insert(vec_container.begin(),
-		       std::begin(data_container),std::end(data_container));
-  */
+
   return vec_container;
 }
 
@@ -74,7 +71,7 @@ std::vector<T>GetValues(std::vector<int>offset_val,std::vector<char>_val,int bat
       end = offset_val[i+1];
 
     std::vector<char>buff_chunks = GetBufferChunks(offset_val,_val,start,end);
-    //  std::cout<<"start "<<start<<" end "<<end<<" "<<buff_chunks.size()<<std::endl;
+
     for(int j=0;j<buff_chunks.size();j+=buff_size){
       std::vector<char>ind_buff;
       for(int k=j;k<j+buff_size;k++){
