@@ -51,7 +51,6 @@ int __tot_branches=0;
 bool Writing_Data=false;
 //end of these variables
 
-//*********************************************************************************
 
 template<typename T>
 std::vector<char>GetMemcpyArray(T _val){
@@ -61,7 +60,50 @@ std::vector<char>GetMemcpyArray(T _val){
   blob.insert(blob.begin(),std::begin(arr_val),std::end(arr_val));
   return blob;
 }
+//*******************************************************************************//
+int CreateEventInfo(int batch,int mpi_size, int tot_events,hid_t lumi_id){
+  std::string _name = "eventinfo";
+  
+  std::vector<int>_meta = {batch,mpi_size,tot_events};
+  int *__buff = _meta.data();
+  
+  hsize_t chunk_dims[1] = {static_cast<hsize_t>(_meta.size())};
 
+  hsize_t dimsf[1] = {chunk_dims[0]};
+  
+  auto dspace_id = H5Screate_simple(1,dimsf,NULL);
+  
+  auto dplist_id = H5Pcreate(H5P_DATASET_CREATE);
+
+  //  auto xf_id = H5Pcreate(H5P_DATASET_XFER);
+
+  auto dset_id = H5Dcreate(lumi_id,_name.c_str(),
+			   H5T_NATIVE_INT,dspace_id,H5P_DEFAULT,
+			   dplist_id,H5P_DEFAULT);
+
+  assert(dset_id>=0);
+
+  hsize_t offset[1] = {0};
+  hsize_t count[1] = {1};
+
+  auto space_status = H5Sselect_hyperslab(dspace_id,H5S_SELECT_SET,
+					  offset,NULL,count,chunk_dims);
+
+  auto _mspace_id = H5Screate_simple(1,chunk_dims,NULL);
+  assert(H5Sselect_all(_mspace_id)>=0);
+
+  auto _status = H5Dwrite(dset_id,H5T_NATIVE_INT,_mspace_id,
+			  dspace_id,H5P_DEFAULT,__buff);
+
+  assert(_status>=0);
+  // assert(H5Pclose(xf_id)>=0);
+  assert(H5Sclose(dspace_id)>=0);
+  assert(H5Pclose(dplist_id)>=0);
+  assert(H5Dclose(dset_id)>=0);
+
+  return mpi_size;
+
+}
 //*********************************************************************************//
 //only create the data-sets nothing else.
 int CreateDataSets(TBranch *branch,int buff_size,hid_t lumi_id){
@@ -85,6 +127,7 @@ int CreateDataSets(TBranch *branch,int buff_size,hid_t lumi_id){
   hsize_t chunk_dims[1] = {static_cast<hsize_t>(buff_size*mpi_size)};
   hsize_t chunk_dims_offset[1] = {static_cast<hsize_t>(mpi_size)};
   hsize_t chunk_dims_info[1] = {static_cast<hsize_t>(sizeof(branch_type))};
+  
   auto dspace_id = H5Screate_simple(1,dimsf,max_dims);
   auto dspace_offset_id = H5Screate_simple(1,dimsf,max_dims);
   auto dspace_info_id = H5Screate_simple(1,dimsf,chunk_dims_info);
@@ -146,12 +189,10 @@ int CreateDataSets(TBranch *branch,int buff_size,hid_t lumi_id){
   
   return mpi_size;
 }
-//************************************************************************************************//
 
-int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int ievt, int tentry,int mpi_rank,int mpi_size){
-  // int _mpi_rank,_mpi_size;
-  // MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
-    //    MPI_Comm_rank(MPI_COMM_WORLD,&_mpi_rank);
+
+//***********************************************************************************************//
+int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int ievt,int mpi_rank,int mpi_size){
 
   //I think it is better to do everything in one go.
   auto curr_size = static_cast<unsigned long long>(buff.size());
@@ -273,7 +314,7 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
 }
 
 //***********************************************************************************//
-int WriteDataSetsSerial(std::string branch_name,std::vector<char>buff,hid_t lumi_id, int ievt, int tentry){
+int WriteDataSetsSerial(std::string branch_name,std::vector<char>buff,hid_t lumi_id, int tentry){
   int mpi_rank;
   MPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
   auto curr_size = static_cast<unsigned long long>(buff.size());
@@ -373,16 +414,16 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
     auto sum_prods = std::accumulate(sizes.begin(),sizes.end(),0);
     if(sum_prods==0){
 #ifdef DEBUG
-      std::cout<<" Found Empty sum_prods "<<ievt<<" "<<tentry<<" "
+      std::cout<<" Found Empty sum_prods "<<ievt<<" "<<nbatch<<" "
 	       <<mpi_rank<<std::endl;
 #endif
       
     }
 
     if(!serial)
-    auto status = WriteDataSets(ds_name,tmp1,lumi_id,ievt,tentry,mpi_rank,mpi_size);
+    auto status = WriteDataSets(ds_name,tmp1,lumi_id,round,mpi_rank,mpi_size);
     else{
-    auto  status = WriteDataSetsSerial(ds_name,tmp1,lumi_id,ievt,tentry);
+    auto  status = WriteDataSetsSerial(ds_name,tmp1,lumi_id,round);
     }
   }
   MPI_Barrier(MPI_COMM_WORLD);

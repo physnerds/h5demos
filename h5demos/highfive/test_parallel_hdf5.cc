@@ -6,8 +6,6 @@
 
 #include "time.h"
 #include <ctime>
-//#include "dkmeta.h"
-#include "dk2nu.h"
 
 #include <string>
 #include <cstddef>
@@ -17,7 +15,6 @@
 #include <iomanip>
 #include <cassert>
 #include "hdf5.h"
-#include "h5_setup_mpi.h"
 #include "mpi.h"
 #include "H5FDmpio.h"
 //#include "H5Cpp.h"

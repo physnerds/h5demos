@@ -105,11 +105,8 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     auto classes = return_classes(l);
     auto dset_names = return_dsetnames(l);
     std::cout<<"Total Number of Entries are "<<nentries<<" Total Branches "<<tot_branches<<std::endl;
-    /*
-    std::vector<std::string>dset_names = {dset_names_[1],dset_names_[0]};
-    tot_branches = 2;
-    std::vector<TClass*>classes = {classes_[1],classes_[0]};
-    */
+
+    
     for(Long64_t jentry=0;jentry<tot_branches;++jentry)
       {
       //I guess we can take the buffer info from here....
@@ -127,48 +124,86 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 	  
 	}
       }
-
-
+    
     //Creating part is done....now the filling part.
-      nentries = 114;
-    int niter = nentries/global_size;
-    int remainder = nentries%global_size;
-
+    int niter = nentries/(global_size);
+    int remainder = nentries%(global_size);
+    int batch_status = nentries%(batch*global_size);//mpi ranks maybe not have same events all the time..need correction
+    if(remainder==0){
+      if(batch_status!=0)batch=global_size; //for now I will just reset things here....
+    }
+    auto event_info = CreateEventInfo(batch,global_size,nentries,lumi);
     std::cout<<"Total Entries "<<nentries<<" "<<niter*global_size+remainder
 	     <<" Iter "<<niter<<" Remainder "<<remainder<<std::endl;
     MPI_Barrier(MPI_COMM_WORLD);
 
     for(int i=0;i<niter;i++){
       auto j = global_rank+global_size*i;
-      e->GetEntry(j);
-      for(Long64_t jentry=0;jentry<tot_branches;++jentry){
-	auto b = dynamic_cast<TBranch*>((*l)[jentry]);
-	auto dataprod_name = b->GetName();
-	/*
-	std::cout<<"Event: "<<j<<" Name Read "<<dataprod_name<<" "
-		 <<global_rank<<" "<<i<<std::endl;
-	*/
-	if(classes[jentry]==nullptr){
-	  auto blob = return_fundamental_blobs(b);
-	  products.push_back(blob);
+	if(remainder==0){
+
+	e->GetEntry(j);
+	std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes);
+	copy(temp_products.begin(),temp_products.end(),back_inserter(products));
+	nbatch++;
+	if(nbatch==batch||j==niter*global_size-1){
+	  write_1D_chars_MPI(products,dset_names,batch,nbatch,
+			     round,lumi,global_rank,global_size,i,j,false);
+	  
+	  
+	  nbatch=0;
+	  products.clear();
+	  ++round;
+	}
+	 
+	}
+     
+      else{
+	if(i<niter-1){
+	  e->GetEntry(j);
+	  std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes);
+	  copy(temp_products.begin(),temp_products.end(),back_inserter(products));
+	  nbatch++;
+	  if(nbatch==batch||j==niter*global_size-1){
+	    write_1D_chars_MPI(products,dset_names,batch,nbatch,
+			       round,lumi,global_rank,global_size,i,j,false);
+	    
+	    nbatch=0;
+	    products.clear();
+	    ++round;
+	  }
+
 	}
 	else{
-	  auto blob = return_blob(b,classes[jentry]);
-	  products.push_back(blob);
+	  int residual = remainder/global_size;
+	    e->GetEntry(j);
+	    int new_batch = 1;
+	    if(global_rank<remainder)
+	      new_batch = 2;
+	    std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes);
+	    copy(temp_products.begin(),temp_products.end(),back_inserter(products));
+	    nbatch++;
+	    if(global_rank<remainder){
+
+	      e->GetEntry(j+global_size);
+
+	      std::vector<product_t> temp_temp_products = ReturnBlobs(l,tot_branches,classes);
+	      copy(temp_temp_products.begin(),temp_temp_products.end(),back_inserter(products));
+	      nbatch++;
+	      
+	    }
+	    if(global_rank<remainder)
+	      std::cout<<i<<" "<<j+global_size<<" HERE "<<batch<<" "<<new_batch
+		       <<" "<<nbatch<<" "<<global_rank<<" "<<products.size()<<std::endl;
+	    
+	      write_1D_chars_MPI(products,dset_names,new_batch,nbatch,
+				 round,lumi,global_rank,global_size,i,j,false);
+	      
+	      
+	      nbatch=0;
+	      products.clear();
+	      ++round;
 	}
       }
-      nbatch++;
-      if(nbatch==batch||j==niter*global_size-1){
-
-	write_1D_chars_MPI(products,dset_names,batch,nbatch,
-			   round,lumi,global_rank,global_size,i,j,false);
-	
-	nbatch=0;
-	products.clear();
-	++round;
-
-      }
-
     }
     
 
@@ -185,12 +220,8 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     H5Aclose(scalar_attr);
     H5Aclose(lumi_attr);
 
-    //in the end close the file.
 
     //lets check the number of open obj id in case there are any....
-#ifdef DEBUG
-    std::cout<<" Done with IO "<<global_rank<<std::endl;
-#endif
     size_t obj_id = H5Fget_obj_count(file_id,H5F_OBJ_ALL);
     std::cout<<"Total Open Objects are "<<obj_id<<" in rank "<<global_rank<<std::endl;
 
@@ -208,63 +239,10 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     obj_id = H5Fget_obj_count(file_id,H5F_OBJ_FILE);
     std::cout<<"Total Open files are "<<obj_id<<" in rank "<<global_rank<<std::endl;
 
-
-    MPI_Barrier(MPI_COMM_WORLD);
-#ifdef DEBUG
-    int tot_ranks= 0;
-    MPI_Scan(&global_rank,&tot_ranks,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
-    std::cout<<" Total Ranks "<<tot_ranks<<" "<<global_rank<<std::endl;
-#endif
+    //in the end close the file.
+    
     H5Fclose(file_id);
     MPI_Barrier(MPI_COMM_WORLD);
-    //okay once everything is closed, maybe I can try to open the file in serial and do the IO stuff serially.
-      if(remainder!=0){
-      file_id = H5Fopen(H5FILE_NAME,H5F_ACC_RDWR,H5P_DEFAULT);
-      //open the group run....
-      
-      run = H5Gopen(file_id,run_name,H5P_DEFAULT);
-      lumi = H5Gopen(run,lumi_name,H5P_DEFAULT);
-      //  auto dataset_id = H5Dopen(lumi,"phi",H5P_DEFAULT);
-      for(Long64_t i = niter*global_size;i<nentries;i++){
-	//	std::cout<<"Serial Reading entry "<<i<<" "<<niter*global_size<<" "
-	//	 <<nentries<<std::endl;
-	e->GetEntry(i);
-	for(Long64_t jentry=0;jentry<tot_branches;++jentry){
-	  auto b = dynamic_cast<TBranch*>((*l)[jentry]);
-	  auto dataprod_name = b->GetName();
-	  
-	  if(classes[jentry]==nullptr){
-	    auto blob = return_fundamental_blobs(b);
-	    products.push_back(blob);
-	    
-	  }
-	  else{
-	    auto blob = return_blob(b,classes[jentry]);
-	    products.push_back(blob);
-	    
-	  }
-	}
-	nbatch++;
-	if(nbatch==batch||i==nentries-1){
-	  write_1D_chars_MPI(products,dset_names,batch,nbatch,
-			     round,lumi,global_rank,global_size,i,i,true);
-	
-	nbatch=0;
-	products.clear();
-	++round;
-
-	}
-
-      }
-	
-      H5Gclose(lumi);
-      H5Gclose(run);
-      H5Fclose(file_id);
-      
-      }
-      
-
-
     
     std::cout<<"END OF THE CODE "<<global_rank<<std::endl;
 }
