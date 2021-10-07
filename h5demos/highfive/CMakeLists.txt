@@ -45,5 +45,7 @@ add_executable(test_parallel_hdf5 test_parallel_hdf5.cc)
 target_compile_options(test_parallel_hdf5 PRIVATE ${HDF5_CXX_COMPILER_EXECUTABLE})
 target_link_libraries(test_parallel_hdf5 ${libraries})
 
-
+add_executable(read_h5_deserialize_MPI_1D read_h5_deserialize_MPI_1D.cc)
+target_compile_options(read_h5_deserialize_MPI_1D PRIVATE ${HDF5_CXX_COMPILER_EXECUTABLE})
+target_link_libraries(read_h5_deserialize_MPI_1D ${libraries})
 

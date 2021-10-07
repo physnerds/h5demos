@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+using product_t = std::vector<char>;
+
 std::vector<std::string> return_dsetnames(TObjArray* l) {
   std::vector<std::string> names;
   names.reserve(l->GetEntriesFast());
@@ -51,23 +53,6 @@ std::vector<char> return_blob(TBranch* b, TClass* c) {
 }
 
 
-const char* return_datatype(TBranch *b){
-  TClass *class_ptr = nullptr;
-  EDataType type;
-  b->GetExpectedType(class_ptr,type);
-  if(class_ptr!=nullptr){
-    return b->GetClassName();
-
-  }
-  else{
-    auto leaves = b->GetListOfLeaves();
-    auto leaf = dynamic_cast<TLeaf*>((*leaves)[0]);
-    auto _val = leaf->GetTypeName();
-    return _val;
-
-  }
-}
-
 std::vector<char>return_fundamental_blobs(TBranch *b){
   TBufferFile bufferFile{TBuffer::kWrite};
   auto leaves = b->GetListOfLeaves();
@@ -90,29 +75,45 @@ std::vector<char>return_fundamental_blobs(TBranch *b){
     blob.push_back('\0');
     
   }
-  /*
-  if(_type.str()=="Int_t"){
-    auto _length = leaf->GetLen();
-    Int_t _buf[_length];
-    for(int i = 0;i<_length;i++)_buf[i] = leaf->GetValue(i);
-    bufferFile.WriteArray(_buf,_length);
-  }
-  if(_type.str()=="Double_t"){
-    auto _length = leaf->GetLen();
-    Int_t _buf[_length];
-    for(int i = 0;i<_length;i++)_buf[i] = leaf->GetValue(i);
-    bufferFile.WriteArray(_buf,_length);
-  }
-  if(_type.str()=="Bool_t"){
-    auto _length = leaf->GetLen();
-    Double_t _buf[_length];
-    for(int i=0;i<_length;i++)_buf[i]=leaf->GetValue(i);
-    bufferFile.WriteArray(_buf,_length);
-  }  
-  std::vector<char>blob(bufferFile.Buffer(),bufferFile.Buffer()+bufferFile.Length());
-  */
   return blob;
 }
+
+const char* return_datatype(TBranch *b){
+  TClass *class_ptr = nullptr;
+  EDataType type;
+  b->GetExpectedType(class_ptr,type);
+  if(class_ptr!=nullptr){
+    return b->GetClassName();
+
+  }
+  else{
+    auto leaves = b->GetListOfLeaves();
+    auto leaf = dynamic_cast<TLeaf*>((*leaves)[0]);
+    auto _val = leaf->GetTypeName();
+    return _val;
+
+  }
+}
+
+//*********************************************************************************
+std::vector<product_t> ReturnBlobs(TObjArray* obj,int tot_branches,std::vector<TClass*>classes){
+  //tree->GetEntry(ientry);
+  std::vector<product_t>products;
+  for(Long64_t jentry=0;jentry<tot_branches;++jentry){
+    auto b = dynamic_cast<TBranch*>((*obj)[jentry]);
+    if(classes[jentry]==nullptr){
+      auto blob = return_fundamental_blobs(b);
+      products.push_back(blob);
+    }
+    else{
+      auto blob = return_blob(b,classes[jentry]);
+      products.push_back(blob);
+    }
+  }
+  return products;
+}
+
+//******************************************************************************//
 
 void cms_read() {
   auto f = TFile::Open("PoolOutputTest.root");
