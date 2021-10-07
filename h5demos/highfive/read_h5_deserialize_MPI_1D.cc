@@ -24,8 +24,8 @@
 template<typename T>
 std::vector<T> DataArray(std::string hfilename,std::string ds_name,hid_t data_type){
   hid_t file_id = H5Fopen(hfilename.c_str(),H5F_ACC_RDONLY,H5P_DEFAULT);
-  hid_t ds_id;
-  auto ds_info_id = H5Dopen(file_id,ds_name.c_str(),ds_id);
+  assert(file_id>=0);
+  auto ds_info_id = H5Dopen(file_id,ds_name.c_str(),H5P_DEFAULT);
   assert(ds_info_id>=0);
   auto dspace_info_id = H5Dget_space(ds_info_id);
   assert(dspace_info_id>=0);
