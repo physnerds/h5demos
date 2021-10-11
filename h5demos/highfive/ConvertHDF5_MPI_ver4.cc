@@ -139,71 +139,20 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
     for(int i=0;i<niter;i++){
       auto j = global_rank+global_size*i;
-	if(remainder==0){
-
-	e->GetEntry(j);
-	std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes);
-	copy(temp_products.begin(),temp_products.end(),back_inserter(products));
-	nbatch++;
-	if(nbatch==batch||j==niter*global_size-1){
-	  write_1D_chars_MPI(products,dset_names,batch,nbatch,
-			     round,lumi,global_rank,global_size,i,j,false);
-	  
-	  
-	  nbatch=0;
-	  products.clear();
-	  ++round;
+      e->GetEntry(j);
+      std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes,j,entries);
+      copy(temp_products.begin(),temp_products.end(),back_inserter(products));
+      nbatch++;
+      if(nbatch==batch||j==niter*global_size-1){
+	write_1D_chars_MPI(products,dset_names,batch,nbatch,
+			   round,lumi,global_rank,global_size,i,j,false);
+	
+	
+	nbatch=0;
+	products.clear();
+	++round;
 	}
-	 
-	}
-     
-      else{
-	if(i<niter-1){
-	  e->GetEntry(j);
-	  std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes);
-	  copy(temp_products.begin(),temp_products.end(),back_inserter(products));
-	  nbatch++;
-	  if(nbatch==batch||j==niter*global_size-1){
-	    write_1D_chars_MPI(products,dset_names,batch,nbatch,
-			       round,lumi,global_rank,global_size,i,j,false);
-	    
-	    nbatch=0;
-	    products.clear();
-	    ++round;
-	  }
-
-	}
-	else{
-	  int residual = remainder/global_size;
-	    e->GetEntry(j);
-	    int new_batch = 1;
-	    if(global_rank<remainder)
-	      new_batch = 2;
-	    std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes);
-	    copy(temp_products.begin(),temp_products.end(),back_inserter(products));
-	    nbatch++;
-	    if(global_rank<remainder){
-
-	      e->GetEntry(j+global_size);
-
-	      std::vector<product_t> temp_temp_products = ReturnBlobs(l,tot_branches,classes);
-	      copy(temp_temp_products.begin(),temp_temp_products.end(),back_inserter(products));
-	      nbatch++;
-	      
-	    }
-	    if(global_rank<remainder)
-	      std::cout<<i<<" "<<j+global_size<<" HERE "<<batch<<" "<<new_batch
-		       <<" "<<nbatch<<" "<<global_rank<<" "<<products.size()<<std::endl;
-	    
-	      write_1D_chars_MPI(products,dset_names,new_batch,nbatch,
-				 round,lumi,global_rank,global_size,i,j,false);
-	      
-	      
-	      nbatch=0;
-	      products.clear();
-	      ++round;
-	}
-      }
+        
     }
     
 

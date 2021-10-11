@@ -12,6 +12,17 @@
 
 using product_t = std::vector<char>;
 
+std::vector<char>return_empty_buffer(TBranch *b){
+  auto leaves = b->GetListOfLeaves();
+  auto leaf = dynamic_cast<TLeaf*>((*leaves)[0]);
+  std::vector<char>blob;
+  blob.push_back('\0');
+
+  return blob;
+}
+
+//****************************************************************//
+
 std::vector<std::string> return_dsetnames(TObjArray* l) {
   std::vector<std::string> names;
   names.reserve(l->GetEntriesFast());
@@ -96,11 +107,18 @@ const char* return_datatype(TBranch *b){
 }
 
 //*********************************************************************************
-std::vector<product_t> ReturnBlobs(TObjArray* obj,int tot_branches,std::vector<TClass*>classes){
+std::vector<product_t> ReturnBlobs(TObjArray* obj,int tot_branches,std::vector<TClass*>classes, int jentry, int tot_entries){
   //tree->GetEntry(ientry);
   std::vector<product_t>products;
+
   for(Long64_t jentry=0;jentry<tot_branches;++jentry){
     auto b = dynamic_cast<TBranch*>((*obj)[jentry]);
+
+    if(jentry>=tot_entries){
+      auto blob = return_empty_buffer(l);
+      return blob;
+    }
+      
     if(classes[jentry]==nullptr){
       auto blob = return_fundamental_blobs(b);
       products.push_back(blob);
