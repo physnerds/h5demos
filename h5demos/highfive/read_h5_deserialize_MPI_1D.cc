@@ -11,15 +11,7 @@
 #include "TH2D.h"
 #include "TFile.h"
 #include "hdf5.h"
-//#include "H5Cpp.h"
 
-//using c++ api has its own limitations.....
-//the c++ api for the hdf5
-//#include "H5Cpp.h"
-//see example below for the cpp api:
-//https://support.hdfgroup.org/HDF5/doc/cpplus_RM/readdata_8cpp-example.html
- 
-//The idea is to deserialize the 1D data-set first.
 //******************************************************************************
 template<typename T>
 std::vector<T> DataArray(std::string hfilename,std::string ds_name,hid_t data_type){
@@ -57,19 +49,19 @@ std::vector<char>GetBufferChunks(std::vector<int>offset_val,std::vector<char>_va
 
 //*****************************************************************************//
 template<typename T>
-std::vector<T>GetValues(std::vector<int>offset_val,std::vector<char>_val,int batch_size){
+std::vector<T>GetValues(std::vector<int>offset_val,std::vector<char>_val,int batch_size,int tot_entries){
   std::vector<T> values;
   int buff_size = (offset_val[1]-offset_val[0])/batch_size;
-  int tot_events = _val.size()/buff_size;
+  int tot_events = tot_entries;
   assert(_val.size()%buff_size==0);
-
   for(int i= 0;i<offset_val.size();i++){
     int start = offset_val[i];
     int end;
+    
     if(i==offset_val.size()-1)end = _val.size();
     else
       end = offset_val[i+1];
-
+    
     std::vector<char>buff_chunks = GetBufferChunks(offset_val,_val,start,end);
 
     for(int j=0;j<buff_chunks.size();j+=buff_size){
@@ -87,7 +79,7 @@ std::vector<T>GetValues(std::vector<int>offset_val,std::vector<char>_val,int bat
     buff_chunks.clear();
 
   }
-  
+  std::cout<<"Total events recovered "<<values.size()<<std::endl;
   return values;
 
 }
@@ -125,7 +117,7 @@ void hdf5_read_ds(std::string hfilename){
 	   <<_info[2]<<" Total Events \n"<<std::endl;
 
 
-  std::vector<double>values = GetValues<double>(_val_offset,_val,_info[0]);
+  std::vector<double>values = GetValues<double>(_val_offset,_val,_info[0],_info[2]);
 
 
   for(int i=0;i<values.size();i++)std::cout<<_name<<" "<<i<<" "<<values[i]<<std::endl;

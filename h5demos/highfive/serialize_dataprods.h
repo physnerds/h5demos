@@ -115,17 +115,19 @@ std::vector<product_t> ReturnBlobs(TObjArray* obj,int tot_branches,std::vector<T
     auto b = dynamic_cast<TBranch*>((*obj)[jentry]);
 
     if(jentry>=tot_entries){
-      auto blob = return_empty_buffer(l);
-      return blob;
-    }
-      
-    if(classes[jentry]==nullptr){
-      auto blob = return_fundamental_blobs(b);
+      auto blob = return_empty_buffer(b);
       products.push_back(blob);
+      return products;
     }
-    else{
-      auto blob = return_blob(b,classes[jentry]);
-      products.push_back(blob);
+    else{ 
+      if(classes[jentry]==nullptr){
+	auto blob = return_fundamental_blobs(b);
+	products.push_back(blob);
+      }
+      else{
+	auto blob = return_blob(b,classes[jentry]);
+	products.push_back(blob);
+      }
     }
   }
   return products;

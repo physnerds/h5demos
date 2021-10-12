@@ -29,8 +29,7 @@ using product_t = std::vector<char>;
 //#define WAIT
 //#define BETA
 
-//Chris:
-//Simplify with the simple  numbers for multiple data-sets and then see if events are going whey they are supposed to be going.
+
 
 void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std::string const& outname ){
   int argc; char **argv;
@@ -91,8 +90,6 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     //create the attribute for lumi....
     auto lumi_att_id = H5Screate(H5S_SCALAR);
     auto lumi_attr = H5Acreate(lumi,lumi_name,H5T_NATIVE_INT,lumi_att_id,H5P_DEFAULT,H5P_DEFAULT);
-
-   
     
     auto f = TFile::Open(input_file_dir); 
     auto e = (TTree*)f->Get(ntuple_name.c_str());
@@ -128,10 +125,11 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     //Creating part is done....now the filling part.
     int niter = nentries/(global_size);
     int remainder = nentries%(global_size);
+    int new_remainder = remainder;
+    //if(new_remainder<global_size) new_remainder=global_size;
+    if(remainder!=0)
+      niter = niter+1; //just add the remainder back and then later on put empty buffers on the extra entries....
     int batch_status = nentries%(batch*global_size);//mpi ranks maybe not have same events all the time..need correction
-    if(remainder==0){
-      if(batch_status!=0)batch=global_size; //for now I will just reset things here....
-    }
     auto event_info = CreateEventInfo(batch,global_size,nentries,lumi);
     std::cout<<"Total Entries "<<nentries<<" "<<niter*global_size+remainder
 	     <<" Iter "<<niter<<" Remainder "<<remainder<<std::endl;
@@ -140,20 +138,33 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     for(int i=0;i<niter;i++){
       auto j = global_rank+global_size*i;
       e->GetEntry(j);
-      std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes,j,entries);
+      
+    
+      std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes,j,nentries);
       copy(temp_products.begin(),temp_products.end(),back_inserter(products));
+      int next_j = global_rank+global_size*(i+1);
       nbatch++;
-      if(nbatch==batch||j==niter*global_size-1){
+      if(next_j<nentries){
+	if(nbatch==batch||j==nentries-1){
+	  write_1D_chars_MPI(products,dset_names,batch,nbatch,
+			     round,lumi,global_rank,global_size,i,j,false);
+	  
+	  
+	  nbatch=0;
+	  products.clear();
+	  ++round;
+	}
+      }
+      else{
 	write_1D_chars_MPI(products,dset_names,batch,nbatch,
 			   round,lumi,global_rank,global_size,i,j,false);
-	
-	
 	nbatch=0;
 	products.clear();
 	++round;
-	}
-        
+	  
+      }
     }
+
     
 
     MPI_Barrier(MPI_COMM_WORLD);
