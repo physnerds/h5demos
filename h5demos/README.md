@@ -191,7 +191,7 @@ GROUP "/" {
      outputfilename: The name of the output HDF5 File.
 
 
-     Example of Running the code parallely (from h5demos/highfive/build directory):
+     Example of Running the code parallely (from trial_h5demos/h5demos/highfive/build directory):
      $mpirun -np 3 ./ConvertHDF5_MPI_ver4 ../rfiles/For_TMVA_DATA_minervame5A6A6B_kludged_small_stats.root 4 blaa.h5
 
      This will do the read the ROOT file  with 3 parallel processes. The ROOT to HDF5 IO happens after every 4 events   are collected. 
