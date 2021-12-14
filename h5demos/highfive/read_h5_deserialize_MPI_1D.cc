@@ -18,7 +18,7 @@ struct GetDataSetsInfo{
   GetDataSetsInfo(hid_t file_id,H5O_iterate_t op_func)
     :_file_id(file_id),_op_func(op_func)
   {
-    auto _status = H5Ovisit (file_id, H5_INDEX_NAME, H5_ITER_NATIVE, op_func, NULL);
+    auto _status = H5Ovisit (file_id, H5_INDEX_NAME, H5_ITER_NATIVE, op_func, NULL, H5O_INFO_BASIC);
   }
   
   hid_t _file_id;

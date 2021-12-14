@@ -29,7 +29,7 @@ using product_t = std::vector<char>;
 //#define WAIT
 //#define BETA
 
-
+// SS: All the root-related access and functions should be separated than HDF5 calls. It improves calirty, and provides better separation of concerns that is development best practice. 
 
 void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std::string const& outname ){
   int argc; char **argv;
@@ -37,18 +37,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
   //just the boiler plate from the example......
   //need to understand what each of these variables are needed for.....
   
-  hid_t file_id;      //File ID
-  hid_t filespace,memspace;
-  //hid_t plist_id;
-  hid_t fapl_id;     //File access property list
-  hid_t run,lumi;   //Group ID
 
-  std::vector<product_t>products;
-  char groupname[16];
-  std::string ntuple_name = "ccqe_data";
-
-  initial_time = std::time(nullptr);
-  
   MPI_Initialized(&flag);
   if(!flag)MPI_Init(&argc,&argv);
   //also put the global variables....
@@ -68,6 +57,15 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
   // MPI_Barrier(MPI_COMM_WORLD);
   //now lets try to setup the file access property list with parallel I/O access
   
+  hid_t file_id;      //File ID
+  hid_t filespace,memspace;
+  //hid_t plist_id;
+  hid_t fapl_id;     //File access property list
+  hid_t run,lumi;   //Group ID
+
+  std::vector<product_t>products;
+  char groupname[16];
+  std::string ntuple_name = "ccqe_data";
   auto plist_id = H5Pcreate (H5P_FILE_ACCESS);
   //make sure that we have created the file access property list...
   assert(plist_id>0);
@@ -113,6 +111,8 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 	if(classes[jentry]==nullptr){
 	  auto blob = return_fundamental_blobs(branch);
 	  //DataSet for the actual branch
+	  //SS: Consider factorizing this function. 
+	  //Also, we may not need to pass in branch object here
 	  CreateDataSets(branch,blob.size(),lumi);
 	}
 	else{
@@ -241,6 +241,6 @@ int main(int argc, char* argv[]){
 
   std::cout<<" Rank "<<rank<<" Processing Time: "<<end_time-st_time<<std::endl;
   //MPI_Finalize();
-  return 1;
+  return 0;
   }
 

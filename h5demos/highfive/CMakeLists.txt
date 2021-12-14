@@ -4,7 +4,7 @@ set(CMAKE_C_FLAGS $ENV{CFLAGS})
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 #set(CMAKE_BUILD_TYPE Debug) #change this to release for release build
-set(H5PCC_CXX_COMPILE_FLAG "/Users/abashyal/opt/miniconda3/envs/argonne_stuff/bin/h5pcc")
+#set(H5PCC_CXX_COMPILE_FLAG "/Users/abashyal/opt/miniconda3/envs/argonne_stuff/bin/h5pcc")
 find_package(MPI REQUIRED)
 find_package(ROOT REQUIRED COMPONENTS)
 find_package(HDF5 REQUIRED)
@@ -25,7 +25,7 @@ include_directories (SYSTEM
 		    ${ROOT_INCLUDE_DIRS}
                     $ENV{CMSSW_BASE}/src)
 		    
-#link_directories ($ENV{ROOTSYS}/lib)
+link_directories ($ENV{ROOTSYS}/lib)
 
 set (libraries ${libraries}
                ${ROOT_LIBRARIES}

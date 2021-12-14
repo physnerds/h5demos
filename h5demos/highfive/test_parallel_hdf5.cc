@@ -116,15 +116,16 @@ int test_parallel_hdf5(){
   srand(time(NULL));
   hsize_t trial_offset=0;
   for(int i =0;i<size*_iter;i++){
-    int random_number = rand()%100;
-    num_list.push_back(random_number);
+    //int random_number = rand()%100;
+    num_list.push_back(rank*10+i);
   }
   std::cout<<"size of the vector "<<num_list.size()<<std::endl;
   for(int i=0;i<num_list.size();i++)std::cout<<" Content "<<num_list[i]<<std::endl;
-   for(int i = 0;i<_iter;i++){
+   for(int i = 0;i<num_list.size();i++){
     // MPI_Barrier(MPI_COMM_WORLD);//maybe we can synchronize before starting to write
     int random_num;
-    random_num = num_list[rank+i*size];
+    //random_num = num_list[rank+i*size]; // SS: I dont understand whats going on in here, may be we want to loop over in num_list in num_list.size()/_iter steps. 
+    random_num = num_list[i]; // SS: I dont understand whats going on in here, may be we want to loop over in num_list in num_list.size()/_iter steps. 
     std::cout<<"Random number "<<random_num<<" "<<rank<<std::endl;
     std::vector<char>char_buff = {static_cast<char>(random_num)};
     auto curr_size = static_cast<unsigned long long>(char_buff.size());

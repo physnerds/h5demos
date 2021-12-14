@@ -1,6 +1,16 @@
 #ifndef H5_WRITE_1D_CHARS_MPI_H
 #define H5_WRITE_1D_CHARS_MPI_H
 
+// SS notes:
+// SOme thoughts on the header file
+// We alreadt removed two unused variables 
+// Variables should not be defined in header file unless using extern or inline (in C++17)
+// Using namespace will be good
+// Functions should be declared in header file and implemented in the CC file
+// We already updated the flatten_MPI function, please note index value.
+// Be careful with the asserts, compiler may remove them in profile builds. 
+
+
 #include "utilities.h"
 #include "serialize_dataprods.h"
 #include <ctime>
@@ -20,9 +30,7 @@
 //#define TEST
 //#define EXTRAS
 
-std::time_t initial_time;
 using product_t = std::vector<char>;
-char *HSendBuffer=0;
 
 struct dataset_info{
   // Things I would like to save from the data space easily
@@ -35,18 +43,21 @@ struct dataset_info{
 
 };
 
-std::vector<char>
+inline std::vector<char>
 flatten_MPI(std::vector<std::vector<char>> const& tmp) {
-  std::vector<char> tmp1 = tmp[0];
-  for (int i = 1; i<tmp.size(); ++i)
+  std::vector<char> tmp1;
+  for (int i = 0; i<tmp.size(); ++i)
      tmp1.insert(end(tmp1), begin(tmp[i]), end(tmp[i]));
   return tmp1;
 }
 
 //*******************************************************************************
 //these variables to save info....
+//
+//SS: these variables are unused. 
 std::map<std::string,dataset_info>list_createInfo;
 std::map<std::string, dataset_info>size_createInfo;
+
 int __tot_branches=0;
 bool Writing_Data=false;
 //end of these variables
@@ -232,6 +243,7 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
   
   MPI_Scan(&_curr_dims,&tot_dims,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
   int max_dims=0;
+  //SS: is the purpose of this reduce to get maximum of the dimensions, then why are we looking at curr_dims and not tot_dims?
   MPI_Reduce(&_curr_dims,&max_dims,1,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
 
   int tot_buff_size=0;
@@ -267,6 +279,7 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
   auto status_offset = H5Dset_extent(dataset_offset,new_dims_offset);
 
   //get the data-space one more time......
+  //SS: we need to do that since we have extended the dataset dimension
   _dspace_id = H5Dget_space(dataset_id);
   _dspace_offset = H5Dget_space(dataset_offset);
    
@@ -429,6 +442,7 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
   MPI_Barrier(MPI_COMM_WORLD);
 }
 
+//unused function
 void SetTotalBranches(int nbranch){
   __tot_branches=nbranch;
 }
