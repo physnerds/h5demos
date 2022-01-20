@@ -84,7 +84,7 @@ void test_parToken(){
        std::vector<int>dset_offset;
        for(int j = 0;j<dsetnames.size();j++){
            auto _name = dsetnames[j];
-           //for now the random numbers are the dataset names....
+           //for now the random numbers are the dataset contents....
            //remember that we are mimicking that one set of random number
            //corresponds to one data-set and another set to the another data-set.
            int random_num;
