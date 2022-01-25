@@ -23,56 +23,38 @@
 #include "hdf5.h"
 #include "mpi.h"
 #include "H5FDmpio.h"
+
 using product_t = std::vector<char>;
 
-//#define EXTRAS
-//#define WAIT
-//#define BETA
-
-
-
 void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std::string const& outname ){
+  
+  //start-time
+  initial_time = std::time(nullptr);
+ 
+  //MPI-Initializations if not initialized
   int argc; char **argv;
   int flag;
-  //just the boiler plate from the example......
-  //need to understand what each of these variables are needed for.....
-  
-  hid_t file_id;      //File ID
-  hid_t filespace,memspace;
-  //hid_t plist_id;
-  hid_t fapl_id;     //File access property list
-  hid_t run,lumi;   //Group ID
-
-  std::vector<product_t>products;
-  char groupname[16];
-  std::string ntuple_name = "ccqe_data";
-
-  initial_time = std::time(nullptr);
-  
   MPI_Initialized(&flag);
   if(!flag)MPI_Init(&argc,&argv);
-  //also put the global variables....
 
   int global_size,global_rank;
-  
+    
   MPI_Comm_size(MPI_COMM_WORLD,&global_size);
   MPI_Comm_rank(MPI_COMM_WORLD,&global_rank);
-
+ 
+  std::cout<<"MPI RANK "<<global_rank<<" MPI SIZE "<<global_size<<std::endl;
+    
   MPI_Info info;
   MPI_Info_create(&info);
-  
-  std::cout<<"MPI RANK "<<global_rank<<" MPI SIZE "<<global_size<<std::endl;
-  //exit(1);
+    
+  hid_t file_id;      //File ID
+  hid_t run,lumi;   //Group ID
 
-  //lets try to put the barrier and see if I can get rid of the error::
-  // MPI_Barrier(MPI_COMM_WORLD);
-  //now lets try to setup the file access property list with parallel I/O access
-  
-  auto plist_id = H5Pcreate (H5P_FILE_ACCESS);
-  //make sure that we have created the file access property list...
-  assert(plist_id>0);
-  std::cout<<"File access property id is "<<fapl_id<<std::endl;
-  //Below function only works if HDF5-Parallel is implemented.
+
+
+
+   auto plist_id = H5Pcreate (H5P_FILE_ACCESS);
+
    auto  ret = H5Pset_fapl_mpio(plist_id,MPI_COMM_WORLD,info);
     assert(ret>=0);
     
@@ -90,7 +72,10 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     //create the attribute for lumi....
     auto lumi_att_id = H5Screate(H5S_SCALAR);
     auto lumi_attr = H5Acreate(lumi,lumi_name,H5T_NATIVE_INT,lumi_att_id,H5P_DEFAULT,H5P_DEFAULT);
-    
+
+
+    std::vector<product_t>products;
+    std::string ntuple_name = "ccqe_data";
     auto f = TFile::Open(input_file_dir); 
     auto e = (TTree*)f->Get(ntuple_name.c_str());
     auto l = e->GetListOfBranches();
@@ -103,26 +88,14 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     auto dset_names = return_dsetnames(l);
     std::cout<<"Total Number of Entries are "<<nentries<<" Total Branches "<<tot_branches<<std::endl;
 
+
+    CreateDataSets(f,ntuple_name,lumi);
     
-    for(Long64_t jentry=0;jentry<tot_branches;++jentry)
-      {
-      //I guess we can take the buffer info from here....
-	e->GetEntry(0);	
-	auto branch = dynamic_cast<TBranch*>((*l)[jentry]);
-	std::string branch_name = branch->GetName(); 
-	if(classes[jentry]==nullptr){
-	  auto blob = return_fundamental_blobs(branch);
-	  //DataSet for the actual branch
-	  CreateDataSets(branch,blob.size(),lumi);
-	}
-	else{
-	  auto blob = return_blob(branch,classes[jentry]);
-	  CreateDataSets(branch,blob.size(),lumi);
-	  
-	}
-      }
-    
+    //also create the data-set for the Token
+    std::vector<int>dummy_token={0};
+    auto token_info = CreateEventInfo("TokenInfo",dummy_token,lumi,true);
     //Creating part is done....now the filling part.
+    //nentries = 10;
     int niter = nentries/(global_size);
     int remainder = nentries%(global_size);
     int new_remainder = remainder;
@@ -130,7 +103,9 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     if(remainder!=0)
       niter = niter+1; //just add the remainder back and then later on put empty buffers on the extra entries....
     int batch_status = nentries%(batch*global_size);//mpi ranks maybe not have same events all the time..need correction
-    auto event_info = CreateEventInfo(batch,global_size,nentries,lumi);
+    std::vector<int>_meta = {batch,global_size,int(nentries)}; //please do not change the order of this info. Ordering matters when reading back the info.
+    auto event_info = CreateEventInfo("eventinfo", _meta, lumi);
+    
     std::cout<<"Total Entries "<<nentries<<" "<<niter*global_size+remainder
 	     <<" Iter "<<niter<<" Remainder "<<remainder<<std::endl;
     MPI_Barrier(MPI_COMM_WORLD);
@@ -164,9 +139,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 	  
       }
     }
-
-    
-
+   
     MPI_Barrier(MPI_COMM_WORLD);
     
     H5Sclose(scalar_id);
@@ -200,9 +173,10 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     std::cout<<"Total Open files are "<<obj_id<<" in rank "<<global_rank<<std::endl;
 
     //in the end close the file.
-    
+   // delete tk;
     H5Fclose(file_id);
     MPI_Barrier(MPI_COMM_WORLD);
+
     
     std::cout<<"END OF THE CODE "<<global_rank<<std::endl;
 }
@@ -222,9 +196,8 @@ int main(int argc, char* argv[]){
   auto batch_size = atoi(argv[2]);
   auto outname = argv[3];
 
-  int rank,size;
   
-  int ierr;
+  int ierr,rank;
   ierr = MPI_Init(&argc,&argv);
   if(ierr!=0){
     std::cout << "\n";
@@ -233,12 +206,12 @@ int main(int argc, char* argv[]){
     exit ( 1 );
   }
 
-   MPI_Comm_rank(MPI_COMM_WORLD,&rank);
+  MPI_Comm_rank(MPI_COMM_WORLD,&rank);
   double st_time = MPI_Wtime();
   ConvertHDF5_MPI(input_filename,batch_size,run_num,lumi_num,outname);
   double end_time = MPI_Wtime();
   MPI_Barrier(MPI_COMM_WORLD);
-
+  
   std::cout<<" Rank "<<rank<<" Processing Time: "<<end_time-st_time<<std::endl;
   //MPI_Finalize();
   return 1;
