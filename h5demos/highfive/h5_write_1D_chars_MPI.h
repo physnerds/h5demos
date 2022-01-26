@@ -13,11 +13,8 @@
 #include <iostream>
 #include <stdlib.h>
 #include <numeric>
+#include <sstream>
 
-//#include "h5_setup_mpi.h
-#define DEBUG 0
-//#define TEST
-//#define EXTRAS
 
 std::time_t initial_time;
 using product_t = std::vector<char>;
@@ -96,11 +93,18 @@ int CreateEventInfo(std::string _name, std::vector<int>_meta, hid_t lumi_id, boo
   return _status;
 
 }
+//***********************************************************************
+std::string GetAttributes(int batch, std::string type){
+    std::stringstream ss;
+    ss<<batch;
+    std::string _atr = ss.str()+","+type;
+    return _atr;
+}
 
 
 //*********************************************************************************//
 //only create the data-sets nothing else.
-int CreateDataSet(TBranch *branch,int buff_size,hid_t lumi_id){
+int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
   int mpi_size, mpi_rank;
   MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
   MPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
@@ -153,7 +157,7 @@ int CreateDataSet(TBranch *branch,int buff_size,hid_t lumi_id){
 
 //***********************************************************************************************//
 
-void CreateDataSets(TFile *f, std::string tree_name, hid_t lumi){
+void CreateDataSets(TFile *f, std::string tree_name,int batch_size, hid_t lumi){
     
     auto e = (TTree*)f->Get(tree_name.c_str());
     auto l = e->GetListOfBranches();
@@ -167,11 +171,11 @@ void CreateDataSets(TFile *f, std::string tree_name, hid_t lumi){
         if(classes[jentry]==nullptr){
             auto blob = return_fundamental_blobs(branch);
             //DataSet for the actual branch
-            CreateDataSet(branch,blob.size(),lumi);
+            CreateDataSet(branch,blob.size(),batch_size, lumi);
           }
           else{
             auto blob = return_blob(branch,classes[jentry]);
-            CreateDataSet(branch,blob.size(),lumi);
+            CreateDataSet(branch,blob.size(),batch_size, lumi);
             
           }
         
@@ -229,10 +233,7 @@ int WriteTokenInfo(hid_t lumi_id, int ievt){
     else
         offset[0] = static_cast<hsize_t>(curr_dims[0]+tot_dims-token_size);
    
-   // offset[0] = curr_dims[0];
-    //std::cout<<ievt<<" "<<offset[0]<<" "<<new_dims[0]<<" "<<token_info.size()<<std::endl;
-    std::cout<<"Curr dims "<<curr_dims[0]<<" new_dims "<<new_dims[0]<<" tot_dims "<<tot_dims<<" offset "<<offset[0]
-    <<" size of token "<<token_size<<" rank "<<rank<<std::endl;
+
     
     
     auto space_status = H5Sselect_hyperslab(_dspace_id,H5S_SELECT_SET,
@@ -263,29 +264,21 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
   hsize_t buff_size[1] = {static_cast<hsize_t>(curr_size)};
   auto dataset_id = H5Dopen(lumi_id,branch_name.c_str(),H5P_DEFAULT);
   std::string offset_name = branch_name+"_offset";
-//  auto dataset_offset = H5Dopen(lumi_id,offset_name.c_str(),H5P_DEFAULT);
-  
-  
-  //do i need to do this each time I write buffer or it can be a one time thing
+
 
   auto xf_id = H5Pcreate(H5P_DATASET_XFER);
-//  auto xf_id_offset = H5Pcreate(H5P_DATASET_XFER);
 
 
   H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
-//  H5Pset_dxpl_mpio(xf_id_offset,H5FD_MPIO_COLLECTIVE);
 
   
   auto _dspace_id = H5Dget_space(dataset_id);
- // auto _dspace_offset = H5Dget_space(dataset_offset);
   
   //okay the number of dims are going to be same for the meta-datasets as well.
   auto ndims = H5Sget_simple_extent_ndims(_dspace_id);
   
   hsize_t curr_dims[ndims];
- // hsize_t curr_dims_offset[ndims];
   H5Sget_simple_extent_dims(_dspace_id,curr_dims,NULL);
- // H5Sget_simple_extent_dims(_dspace_offset,curr_dims_offset,NULL);
   
   int tot_dims;
   int _curr_dims = static_cast<int>(curr_dims[0]);
@@ -323,33 +316,23 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
     offset[0] = {curr_dims[0]+static_cast<hsize_t>(tot_buff_size-int_buff_size)};
   }
 
- // hsize_t offset_offset[1] = {static_cast<hsize_t>(mpi_rank)+curr_dims_offset[0]};
+
   hsize_t count[1] = {1}; //This is what we will put for now...
   auto status_id = H5Dset_extent(dataset_id,new_dims);
-  //auto status_offset = H5Dset_extent(dataset_offset,new_dims_offset);
 
-  //get the data-space one more time......
   _dspace_id = H5Dget_space(dataset_id);
- // _dspace_offset = H5Dget_space(dataset_offset);
    
 
   auto space_status = H5Sselect_hyperslab(_dspace_id,H5S_SELECT_SET,
 					  offset,NULL,count,buff_size);
 
- // space_status = H5Sselect_hyperslab(_dspace_offset,H5S_SELECT_SET,
-	//			     offset_offset,NULL,count,count);
-
-  
   auto _mspace_id = H5Screate_simple(1,buff_size,NULL);
 
- // auto _mspace_offset = H5Screate_simple(1,count,NULL);
 
 
   char *__buff = buff.data();
   std::vector<char>__buff_sz_ = {static_cast<char>(_curr_size)};
- // std::vector<int>__buff_offset_ = {static_cast<int>(offset[0])};
 
-//  int *__buff_offset = __buff_offset_.data();
   char *__buff_sz = __buff_sz_.data();
 
     token_info.push_back(static_cast<int>(offset[0]));
@@ -357,17 +340,12 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
   auto _status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,_mspace_id,
   			  _dspace_id,xf_id,__buff);
 
- // _status = H5Dwrite(dataset_offset,H5T_NATIVE_INT,_mspace_offset,
-	//	     _dspace_offset,xf_id_offset,__buff_offset);
+
   
     assert(H5Pclose(xf_id)>=0);
-  //  assert(H5Pclose(xf_id_offset)>=0);
     assert(H5Sclose(_dspace_id)>=0);
-   // assert(H5Sclose(_dspace_offset)>=0);
     assert(H5Sclose(_mspace_id)>=0);
-  //  assert(H5Sclose(_mspace_offset)>=0);
     assert(H5Dclose(dataset_id)>=0);
-  //  assert(H5Dclose(dataset_offset)>=0);
   
   return dataset_id;
 }

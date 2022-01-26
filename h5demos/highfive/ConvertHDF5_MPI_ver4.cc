@@ -6,7 +6,7 @@
 #include "h5_write_1D_chars_MPI.h"
 #include "serialize_dataprods.h"
 #include "utilities.h"
-
+#include "HDFCxx.h"
 
 #include <string>
 #include <cstddef>
@@ -25,6 +25,7 @@
 #include "H5FDmpio.h"
 
 using product_t = std::vector<char>;
+using namespace cce::tf;
 
 void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std::string const& outname ){
   
@@ -59,7 +60,10 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     assert(ret>=0);
     
     auto H5FILE_NAME = outname.c_str();
-    file_id = H5Fcreate(H5FILE_NAME, H5F_ACC_TRUNC, H5P_DEFAULT, plist_id);
+    //file_id = H5Fcreate(H5FILE_NAME, H5F_ACC_TRUNC, H5P_DEFAULT, plist_id);
+    //file_id
+    auto f_id(hdf5::File::create(H5FILE_NAME,plist_id));
+    file_id = (hid_t)f_id;
     auto run_name = "/run";
     auto scalar_id = H5Screate(H5S_SCALAR);
     run = H5Gcreate(file_id,run_name,H5P_DEFAULT,H5P_DEFAULT,H5P_DEFAULT);
@@ -80,8 +84,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     auto e = (TTree*)f->Get(ntuple_name.c_str());
     auto l = e->GetListOfBranches();
     //get the total number of branches.... 
-    int nbatch = 0;
-    int round = 0;
+
     auto nentries = e->GetEntriesFast();
     auto tot_branches = l->GetEntriesFast();
     auto classes = return_classes(l);
@@ -89,13 +92,15 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     std::cout<<"Total Number of Entries are "<<nentries<<" Total Branches "<<tot_branches<<std::endl;
 
 
-    CreateDataSets(f,ntuple_name,lumi);
+    CreateDataSets(f,ntuple_name,batch, lumi);
     
     //also create the data-set for the Token
     std::vector<int>dummy_token={0};
     auto token_info = CreateEventInfo("TokenInfo",dummy_token,lumi,true);
-    //Creating part is done....now the filling part.
-    //nentries = 10;
+
+    int nbatch = 0;
+    int round = 0;
+    nentries = 10000;
     int niter = nentries/(global_size);
     int remainder = nentries%(global_size);
     int new_remainder = remainder;
@@ -174,7 +179,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
     //in the end close the file.
    // delete tk;
-    H5Fclose(file_id);
+   // H5Fclose(file_id);
     MPI_Barrier(MPI_COMM_WORLD);
 
     
