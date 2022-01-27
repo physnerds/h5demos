@@ -1,4 +1,4 @@
-This jupyter code looks the at the dump of the "strace" that is run on the ConverHDF5_MPI_ver4 code in the LCRC machine.
+This jupyter code looks the at the dump of the "strace" that is run on the *ConverHDF5_MPI_ver4* code in the LCRC machine.
 
 An example of running this code in serial (i.e. no MPI I/O) is:
 
