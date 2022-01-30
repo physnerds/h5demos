@@ -209,19 +209,7 @@ print("INSTANCES OF BYTE WRITES")
 for byte in dict_bytes_write:
     print(byte, dict_bytes_write[byte])
 
-dict_list_bytes = {"4":[],
-                   "8":[]
-}
-counter_4_bytes=0
-counter_8_bytes=0
-for i in range(0,len(list_bytes_write)):
-    if list_bytes_write[i]==4:
-        dict_list_bytes["4"].append(list_write_proc[i])
-        counter_4_bytes+=1
-    if list_bytes_write[i]==8:
-        dict_list_bytes["8"].append(list_write_proc[i])
-        counter_8_bytes+=1
-        
+
 print("Instances of 4 bytes write ",counter_4_bytes)
 print("Instances of 8 bytes write ",counter_8_bytes)
  
