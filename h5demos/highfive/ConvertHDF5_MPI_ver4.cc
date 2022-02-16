@@ -80,7 +80,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
 
     std::vector<product_t>products;
-    std::string ntuple_name = "CollectionTree";
+    std::string ntuple_name = "ccqe_data"; 
     auto f = TFile::Open(input_file_dir); 
     auto e = (TTree*)f->Get(ntuple_name.c_str());
     auto l_old = e->GetListOfBranches();
