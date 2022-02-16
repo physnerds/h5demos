@@ -56,14 +56,15 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
    auto plist_id = H5Pcreate (H5P_FILE_ACCESS);
 
-   auto  ret = H5Pset_fapl_mpio(plist_id,MPI_COMM_WORLD,info);
+ //  auto  ret = H5Pset_fapl_mpio(plist_id,MPI_COMM_WORLD,info);
+   auto ret = H5Pset_fapl_mpio(plist_id,MPI_COMM_SELF,info);
     assert(ret>=0);
-    
+   // H5Pset_fapl_mpio( file_access, MPI_COMM_SELF, MPI_INFO_NULL ) 
     auto H5FILE_NAME = outname.c_str();
-    //file_id = H5Fcreate(H5FILE_NAME, H5F_ACC_TRUNC, H5P_DEFAULT, plist_id);
+    file_id = H5Fcreate(H5FILE_NAME, H5F_ACC_TRUNC, H5P_DEFAULT, plist_id);
     //file_id
-    auto f_id(hdf5::File::create(H5FILE_NAME,plist_id));
-    file_id = (hid_t)f_id;
+   // auto f_id(hdf5::File::create(H5FILE_NAME,plist_id));
+    //file_id = (hid_t)f_id;
     auto run_name = "/run";
     auto scalar_id = H5Screate(H5S_SCALAR);
     run = H5Gcreate(file_id,run_name,H5P_DEFAULT,H5P_DEFAULT,H5P_DEFAULT);
@@ -79,20 +80,34 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
 
     std::vector<product_t>products;
-    std::string ntuple_name = "ccqe_data";
+    std::string ntuple_name = "CollectionTree";
     auto f = TFile::Open(input_file_dir); 
     auto e = (TTree*)f->Get(ntuple_name.c_str());
-    auto l = e->GetListOfBranches();
+    auto l_old = e->GetListOfBranches();
+    //I want to test with a smaller set of branches...
+    int new_length = 1000;
+  
+      auto l = l_old;
+   //AB: Uncomment this part if you want to test with smaller number of branches.
+    /* 
+    auto l = new TObjArray(new_length);
+      for( int i=0; i<new_length; ++i) {
+          l->AddAt(l_old->At(i),i);
+      }
+     */ 
+     std::cout<<"Size of new branch array "<<l->GetEntriesFast()<<std::endl;
+
     //get the total number of branches.... 
 
     auto nentries = e->GetEntriesFast();
     auto tot_branches = l->GetEntriesFast();
     auto classes = return_classes(l);
     auto dset_names = return_dsetnames(l);
-    std::cout<<"Total Number of Entries are "<<nentries<<" Total Branches "<<tot_branches<<std::endl;
-
-
-    CreateDataSets(f,ntuple_name,batch, lumi);
+    nentries = 100;
+    std::cout<<"Total Number of Entries are "<<nentries<< " Total Branches"<< tot_branches<<" "<<dset_names.size()<<" "<<classes.size()<<std::endl;
+   tot_branches = dset_names.size(); 
+  
+    CreateDataSets(l,ntuple_name,batch, lumi);
     
     //also create the data-set for the Token
     std::vector<int>dummy_token={0};
@@ -100,13 +115,13 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
     int nbatch = 0;
     int round = 0;
-    nentries = 10000;
+
     int niter = nentries/(global_size);
     int remainder = nentries%(global_size);
     int new_remainder = remainder;
     //if(new_remainder<global_size) new_remainder=global_size;
     if(remainder!=0)
-      niter = niter+1; //just add the remainder back and then later on put empty buffers on the extra entries....
+      niter = niter+1; //just add the remainder back and then later on put empty buffers on the extra entries.
     int batch_status = nentries%(batch*global_size);//mpi ranks maybe not have same events all the time..need correction
     std::vector<int>_meta = {batch,global_size,int(nentries)}; //please do not change the order of this info. Ordering matters when reading back the info.
     auto event_info = CreateEventInfo("eventinfo", _meta, lumi);
@@ -119,15 +134,20 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
       auto j = global_rank+global_size*i;
       e->GetEntry(j);
       
-    
-      std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches,classes,j,nentries);
+
+      std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches);
+      if(products.size()==0)products.reserve(temp_products.size());
+      else
+          products.resize(products.size()+temp_products.size());
       copy(temp_products.begin(),temp_products.end(),back_inserter(products));
+        
+      temp_products.clear();
       int next_j = global_rank+global_size*(i+1);
       nbatch++;
       if(next_j<nentries){
 	if(nbatch==batch||j==nentries-1){
 	  write_1D_chars_MPI(products,dset_names,batch,nbatch,
-			     round,lumi,global_rank,global_size,i,j,false);
+        			     round,lumi,global_rank,global_size,i,j,false);
 	  
 	  
 	  nbatch=0;
@@ -221,4 +241,5 @@ int main(int argc, char* argv[]){
   //MPI_Finalize();
   return 1;
   }
+
 

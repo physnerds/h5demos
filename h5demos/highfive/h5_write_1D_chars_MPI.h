@@ -19,7 +19,7 @@
 std::time_t initial_time;
 using product_t = std::vector<char>;
 
-std::vector<int>token_info;
+//std::vector<int>token_info;
 
 std::vector<char>
 flatten_MPI(std::vector<std::vector<char>> const& tmp) {
@@ -105,24 +105,31 @@ std::string GetAttributes(int batch, std::string type){
 //*********************************************************************************//
 //only create the data-sets nothing else.
 int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
+  
   int mpi_size, mpi_rank;
   MPI_Comm_size(MPI_COMM_WORLD,&mpi_size);
   MPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
   hsize_t dimsf[1],
     max_dims[1];
+//  TClass *class_ptr = nullptr;
+//  EDataType type;
+//  branch->GetExpectedType(class_ptr,type);
+ // if(class_ptr==nullptr)return mpi_size;
+
   std::string branch_name = branch->GetName();
   std::string offset_name = branch_name+"_offset";
   std::string branch_info = branch_name+"_info";
 
-  auto branch_type = return_datatype(branch);
-  
+
+  auto branch_type = return_datatype(branch); 
+ // std::cout<<"Single Creation "<<branch->GetName()<<" "<<branch_type<<std::endl;
   hid_t dset_id;
   hid_t offset_id;
   hid_t info_id;
   dimsf[0]=0;
   max_dims[0]=H5S_UNLIMITED;
   
-  hsize_t chunk_dims[1] = {static_cast<hsize_t>(buff_size*mpi_size)};
+  hsize_t chunk_dims[1] = {static_cast<hsize_t>(buff_size*mpi_size*1500)}; //okay i had to add that extra number after mpi-size
 
   
   auto dspace_id = H5Screate_simple(1,dimsf,max_dims);
@@ -137,10 +144,9 @@ int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
 		      H5P_DEFAULT,dplist_id,H5P_DEFAULT);
 
   //Create the Atributes:
-    auto attr_id = H5Acreate (dset_id, "Attr", H5T_STD_I32BE, dspace_id, H5P_DEFAULT, H5P_DEFAULT);
-    H5Aclose (attr_id);
+//    auto attr_id = H5Acreate (dset_id, "Attr", H5T_STD_I32BE, dspace_id, H5P_DEFAULT, H5P_DEFAULT);
+ //  H5Aclose (attr_id);
 
- hsize_t _buff_size[1] = {static_cast<hsize_t>(sizeof(branch_type))};
 
     assert(H5Pclose(xf_id)>=0);
 
@@ -157,10 +163,8 @@ int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
 
 //***********************************************************************************************//
 
-void CreateDataSets(TFile *f, std::string tree_name,int batch_size, hid_t lumi){
+void CreateDataSets(TObjArray *l, std::string tree_name,int batch_size, hid_t lumi){
     
-    auto e = (TTree*)f->Get(tree_name.c_str());
-    auto l = e->GetListOfBranches();
     auto tot_branches = l->GetEntriesFast();
     auto classes = return_classes(l);
     auto dset_names = return_dsetnames(l);
@@ -168,17 +172,21 @@ void CreateDataSets(TFile *f, std::string tree_name,int batch_size, hid_t lumi){
     for(Long64_t jentry=0;jentry<tot_branches;++jentry){
         auto branch = dynamic_cast<TBranch*>((*l)[jentry]);
         std::string branch_name = branch->GetName();
-        if(classes[jentry]==nullptr){
+//	std::cout<<"Creating "<<branch_name<<" "<<classes[jentry]<<" "<<jentry<<std::endl;
+	auto _class = return_class(branch);
+        if(_class==nullptr){
+            std::cout<<"Found nullptr "<<branch_name<<std::endl;
             auto blob = return_fundamental_blobs(branch);
             //DataSet for the actual branch
-            CreateDataSet(branch,blob.size(),batch_size, lumi);
+            //CreateDataSet(branch,blob.size(),batch_size, lumi);
           }
           else{
-            auto blob = return_blob(branch,classes[jentry]);
+//   std::cout<<"Return blob "<<branch_name<<std::endl;
+            auto blob = return_blob(branch,_class);
             CreateDataSet(branch,blob.size(),batch_size, lumi);
             
           }
-        
+ //  std::cout<<"Created "<<branch->GetName()<<std::endl; 
     }
     
     
@@ -187,8 +195,7 @@ void CreateDataSets(TFile *f, std::string tree_name,int batch_size, hid_t lumi){
 
 //*********************************************************************************//
 
-
-int WriteTokenInfo(hid_t lumi_id, int ievt){
+int WriteTokenInfo(hid_t lumi_id, int ievt,std::vector<int>token_info){
 
     int rank;
     
@@ -197,10 +204,11 @@ int WriteTokenInfo(hid_t lumi_id, int ievt){
     int token_size = static_cast<int>(token_info.size());
     auto buff_offset = token_info.data();
     auto dset_id = H5Dopen(lumi_id,"TokenInfo", H5P_DEFAULT);
+    assert(dset_id>=0);
     auto xf_id = H5Pcreate(H5P_DATASET_XFER);
     H5Pset_dxpl_mpio(xf_id,H5FD_MPIO_COLLECTIVE);
     auto _dspace_id = H5Dget_space(dset_id);
-   
+    assert(_dspace_id>=0);
     auto ndims = H5Sget_simple_extent_ndims(_dspace_id);
     
     hsize_t curr_dims[ndims];
@@ -218,14 +226,10 @@ int WriteTokenInfo(hid_t lumi_id, int ievt){
     hsize_t count[1] = {1};
     hsize_t buff_size[1] = {static_cast<hsize_t>(token_size)};
     
-    //if(ievt==0)new_dims[0] = {static_cast<hsize_t>(max_dims)};//{curr_dims[0]};//+tot_size};
-   // else
     new_dims[0] = {curr_dims[0]+static_cast<hsize_t>(max_dims)};
-   // new_dims[0] = curr_dims[0]+static_cast<hsize_t>(token_size);
     auto status_id = H5Dset_extent(dset_id,new_dims);
-    //this is required to ensure that the new dimension is updated in the data-space.
     _dspace_id = H5Dget_space(dset_id);
-    
+    assert(_dspace_id>=0);
     hsize_t offset[1];
    
     if(ievt==0)
@@ -240,32 +244,36 @@ int WriteTokenInfo(hid_t lumi_id, int ievt){
                                             offset,NULL,count,buff_size);
 
     auto _mspace_id = H5Screate_simple(1,buff_size,NULL);
-    
-    auto _status = H5Dwrite(dset_id,H5T_NATIVE_INT,_mspace_id,
+    auto _status = 1;    
+ //   std::cout<<"Token size "<<token_size<<" new dims "<<new_dims[0]
+ //       <<" curr size "<<curr_dims[0]<<" Offset "<<offset[0]<<std::endl;      
+    _status = H5Dwrite(dset_id,H5T_NATIVE_INT,_mspace_id,
                 _dspace_id,xf_id,buff_offset);
 
+
+        
     
     H5Pclose(xf_id);
     H5Sclose(_dspace_id);
     H5Sclose(_mspace_id);
     H5Dclose(dset_id);
     
-    token_info.clear();
     return _status;
     
     
 }
-int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int ievt,int mpi_rank,int mpi_size){
+std::vector<int> WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int ievt,int mpi_rank,int mpi_size){
 
   //I think it is better to do everything in one go.
   auto curr_size = static_cast<unsigned long long>(buff.size());
   int _curr_size = static_cast<int>(curr_size);
   
+//  std::cout<<"WriteDataSets::buffer size "<<buff.size()<<" "<<branch_name<<" "<<ievt<<std::endl;  
   hsize_t buff_size[1] = {static_cast<hsize_t>(curr_size)};
   auto dataset_id = H5Dopen(lumi_id,branch_name.c_str(),H5P_DEFAULT);
   std::string offset_name = branch_name+"_offset";
 
-
+  assert(dataset_id>=0);
   auto xf_id = H5Pcreate(H5P_DATASET_XFER);
 
 
@@ -318,36 +326,42 @@ int WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,in
 
 
   hsize_t count[1] = {1}; //This is what we will put for now...
+  hid_t _status = -1;
+  hid_t _mspace_id;
+ // while(_status<0){
   auto status_id = H5Dset_extent(dataset_id,new_dims);
-
+  
+  //assert(status_id>=0);
   _dspace_id = H5Dget_space(dataset_id);
-   
-
+    
+// assert(_dspace_id>0);
   auto space_status = H5Sselect_hyperslab(_dspace_id,H5S_SELECT_SET,
 					  offset,NULL,count,buff_size);
 
-  auto _mspace_id = H5Screate_simple(1,buff_size,NULL);
+   _mspace_id = H5Screate_simple(1,buff_size,NULL);
 
-
+  assert(space_status>=0);
+  assert(_mspace_id>=0);
 
   char *__buff = buff.data();
   std::vector<char>__buff_sz_ = {static_cast<char>(_curr_size)};
 
   char *__buff_sz = __buff_sz_.data();
 
-    token_info.push_back(static_cast<int>(offset[0]));
-    
-  auto _status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,_mspace_id,
+  //  token_info.push_back(static_cast<int>(offset[0]));
+   _status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,_mspace_id,
   			  _dspace_id,xf_id,__buff);
+ // }
+  //  assert(_status>=0);
+   //if(_status>=0)
+   //   token_info.push_back(static_cast<int>(offset[0]));
 
-
-  
     assert(H5Pclose(xf_id)>=0);
     assert(H5Sclose(_dspace_id)>=0);
     assert(H5Sclose(_mspace_id)>=0);
     assert(H5Dclose(dataset_id)>=0);
-  
-  return dataset_id;
+    std::vector<int>_val = {static_cast<int>(_status),static_cast<int>(offset[0])}; 
+  return _val;
 }
 
 //***********************************************************************************//
@@ -439,35 +453,38 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
 			hid_t lumi_id,int mpi_rank,
 			int mpi_size, int ievt, int tentry,bool serial) 
 {
-
+  std::vector<int>token_info;
   auto num_prods = ds_names.size();
   for(int prod_index = 0;prod_index<num_prods;++prod_index){
     auto prod_size = products[prod_index].size();
     auto tmp = get_prods(products,prod_index,num_prods);
     auto sizes = get_sizes(tmp);
     auto tmp1 = flatten_MPI(tmp);
-
     auto sizes1 = get_sizes1D(tmp1);
     auto ds_name = ds_names[prod_index];
-    auto sum_prods = std::accumulate(sizes.begin(),sizes.end(),0);
-    if(sum_prods==0){
-#ifdef DEBUG
-      std::cout<<" Found Empty sum_prods "<<ievt<<" "<<nbatch<<" "
-	       <<mpi_rank<<std::endl;
-#endif
-      
-    }
     
+   // std::cout<<"Writing For "<<ds_name<<" "<<ievt<<std::endl;
 
-    if(!serial)
-    auto status = WriteDataSets(ds_name,tmp1,lumi_id,round,mpi_rank,mpi_size);
+    auto sum_prods = std::accumulate(sizes.begin(),sizes.end(),0);
+    std::vector<int>_status={-1,-1}; 
+    if(!serial){ 
+
+     _status = WriteDataSets(ds_name,tmp1,lumi_id,round,mpi_rank,mpi_size);
+
+    token_info.push_back(_status[1]);
+    }    
     else{
     auto  status = WriteDataSetsSerial(ds_name,tmp1,lumi_id,round);
     }
   }
-  WriteTokenInfo(lumi_id, round);
-    token_info.clear();
   MPI_Barrier(MPI_COMM_WORLD);
+ // std::cout<<"Size of the Token "<<token_info.size()<<std::endl;
+  hid_t tk_status = -1;
+
+  tk_status = WriteTokenInfo(lumi_id, round,token_info);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  token_info.clear();
 }
 
 void SetTotalBranches(int nbranch){
