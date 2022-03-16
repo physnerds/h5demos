@@ -19,7 +19,7 @@
 std::time_t initial_time;
 using product_t = std::vector<char>;
 
-//std::vector<int>token_info;
+
 
 std::vector<char>
 flatten_MPI(std::vector<std::vector<char>> const& tmp) {
@@ -129,7 +129,7 @@ int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
   dimsf[0]=0;
   max_dims[0]=H5S_UNLIMITED;
   
-  hsize_t chunk_dims[1] = {static_cast<hsize_t>(buff_size*mpi_size*1500)}; //okay i had to add that extra number after mpi-size
+  hsize_t chunk_dims[1] = {static_cast<hsize_t>(buff_size*mpi_size*2000)}; //okay i had to add that extra number after mpi-size
 
   
   auto dspace_id = H5Screate_simple(1,dimsf,max_dims);
@@ -195,7 +195,7 @@ void CreateDataSets(TObjArray *l, std::string tree_name,int batch_size, hid_t lu
 
 //*********************************************************************************//
 
-int WriteTokenInfo(hid_t lumi_id, int ievt,std::vector<int>token_info){
+int WriteTokenInfo(hid_t lumi_id, int ievt,std::vector<int>&token_info){
 
     int rank;
     
@@ -219,7 +219,7 @@ int WriteTokenInfo(hid_t lumi_id, int ievt,std::vector<int>token_info){
     
     MPI_Scan(&_curr_dims,&tot_dims,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
     int max_dims = 0;
-    MPI_Reduce(&tot_dims,&max_dims,1,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+    MPI_Allreduce(&tot_dims,&max_dims,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
     MPI_Bcast(&max_dims,1,MPI_INT,0,MPI_COMM_WORLD);
 
     hsize_t new_dims[1];
@@ -262,13 +262,12 @@ int WriteTokenInfo(hid_t lumi_id, int ievt,std::vector<int>token_info){
     
     
 }
-std::vector<int> WriteDataSets(std::string branch_name,std::vector<char>buff,hid_t lumi_id,int ievt,int mpi_rank,int mpi_size){
-
+std::vector<int> WriteDataSets(std::string branch_name,std::vector<char>const &buff,hid_t lumi_id,int ievt,int mpi_rank,int mpi_size){
+  
   //I think it is better to do everything in one go.
   auto curr_size = static_cast<unsigned long long>(buff.size());
   int _curr_size = static_cast<int>(curr_size);
   
-//  std::cout<<"WriteDataSets::buffer size "<<buff.size()<<" "<<branch_name<<" "<<ievt<<std::endl;  
   hsize_t buff_size[1] = {static_cast<hsize_t>(curr_size)};
   auto dataset_id = H5Dopen(lumi_id,branch_name.c_str(),H5P_DEFAULT);
   std::string offset_name = branch_name+"_offset";
@@ -282,7 +281,6 @@ std::vector<int> WriteDataSets(std::string branch_name,std::vector<char>buff,hid
   
   auto _dspace_id = H5Dget_space(dataset_id);
   
-  //okay the number of dims are going to be same for the meta-datasets as well.
   auto ndims = H5Sget_simple_extent_ndims(_dspace_id);
   
   hsize_t curr_dims[ndims];
@@ -295,14 +293,14 @@ std::vector<int> WriteDataSets(std::string branch_name,std::vector<char>buff,hid
   
   MPI_Scan(&_curr_dims,&tot_dims,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
   int max_dims=0;
-  MPI_Reduce(&_curr_dims,&max_dims,1,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Allreduce(&_curr_dims,&max_dims,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
 
   int tot_buff_size=0;
   int int_buff_size=_curr_size;
 
   MPI_Scan(&int_buff_size,&tot_buff_size,1,MPI_INT,MPI_SUM,MPI_COMM_WORLD);
   int max_buff_size=0;
-  MPI_Reduce(&tot_buff_size,&max_buff_size,1,MPI_INT,MPI_MAX,0,MPI_COMM_WORLD);
+  MPI_Allreduce(&tot_buff_size,&max_buff_size,1,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
 
   int parcel[2] = {max_dims,max_buff_size};
 
@@ -343,18 +341,15 @@ std::vector<int> WriteDataSets(std::string branch_name,std::vector<char>buff,hid
   assert(space_status>=0);
   assert(_mspace_id>=0);
 
-  char *__buff = buff.data();
+ 
+  const char *__buff = buff.data();
   std::vector<char>__buff_sz_ = {static_cast<char>(_curr_size)};
 
   char *__buff_sz = __buff_sz_.data();
 
-  //  token_info.push_back(static_cast<int>(offset[0]));
    _status = H5Dwrite(dataset_id,H5T_NATIVE_CHAR,_mspace_id,
   			  _dspace_id,xf_id,__buff);
- // }
-  //  assert(_status>=0);
-   //if(_status>=0)
-   //   token_info.push_back(static_cast<int>(offset[0]));
+
 
     assert(H5Pclose(xf_id)>=0);
     assert(H5Sclose(_dspace_id)>=0);
@@ -365,7 +360,7 @@ std::vector<int> WriteDataSets(std::string branch_name,std::vector<char>buff,hid
 }
 
 //***********************************************************************************//
-int WriteDataSetsSerial(std::string branch_name,std::vector<char>buff,hid_t lumi_id, int tentry){
+int WriteDataSetsSerial(std::string branch_name,std::vector<char>&buff,hid_t lumi_id, int tentry){
   int mpi_rank;
   MPI_Comm_rank(MPI_COMM_WORLD,&mpi_rank);
   auto curr_size = static_cast<unsigned long long>(buff.size());
@@ -453,6 +448,7 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
 			hid_t lumi_id,int mpi_rank,
 			int mpi_size, int ievt, int tentry,bool serial) 
 {
+
   std::vector<int>token_info;
   auto num_prods = ds_names.size();
   for(int prod_index = 0;prod_index<num_prods;++prod_index){
@@ -460,12 +456,9 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
     auto tmp = get_prods(products,prod_index,num_prods);
     auto sizes = get_sizes(tmp);
     auto tmp1 = flatten_MPI(tmp);
-    auto sizes1 = get_sizes1D(tmp1);
+   // auto sizes1 = get_sizes1D(tmp1);
     auto ds_name = ds_names[prod_index];
     
-   // std::cout<<"Writing For "<<ds_name<<" "<<ievt<<std::endl;
-
-    auto sum_prods = std::accumulate(sizes.begin(),sizes.end(),0);
     std::vector<int>_status={-1,-1}; 
     if(!serial){ 
 
