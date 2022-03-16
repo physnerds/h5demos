@@ -80,21 +80,20 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
 
     std::vector<product_t>products;
-    std::string ntuple_name = "ccqe_data"; 
+    std::string ntuple_name = "CollectionTree";
     auto f = TFile::Open(input_file_dir); 
     auto e = (TTree*)f->Get(ntuple_name.c_str());
     auto l_old = e->GetListOfBranches();
     //I want to test with a smaller set of branches...
-    int new_length = 1000;
-  
-      auto l = l_old;
-   //AB: Uncomment this part if you want to test with smaller number of branches.
-    /* 
+    int new_length = l_old->GetEntriesFast();
+    
     auto l = new TObjArray(new_length);
-      for( int i=0; i<new_length; ++i) {
-          l->AddAt(l_old->At(i),i);
+    int st_val = 0;
+      for( int i=st_val; i<new_length; ++i) {
+          
+          l->AddAt(l_old->At(i),i-st_val);
       }
-     */ 
+      
      std::cout<<"Size of new branch array "<<l->GetEntriesFast()<<std::endl;
 
     //get the total number of branches.... 
@@ -103,7 +102,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     auto tot_branches = l->GetEntriesFast();
     auto classes = return_classes(l);
     auto dset_names = return_dsetnames(l);
-    nentries = 100;
+    nentries = 500;
     std::cout<<"Total Number of Entries are "<<nentries<< " Total Branches"<< tot_branches<<" "<<dset_names.size()<<" "<<classes.size()<<std::endl;
    tot_branches = dset_names.size(); 
   
