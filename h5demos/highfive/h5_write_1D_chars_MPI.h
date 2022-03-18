@@ -30,11 +30,6 @@ flatten_MPI(std::vector<std::vector<char>> const& tmp) {
 }
 
 //*******************************************************************************
-//these variables to save info....
-int __tot_branches=0;
-bool Writing_Data=false;
-//end of these variables
-
 
 template<typename T>
 std::vector<char>GetMemcpyArray(T _val){
@@ -102,7 +97,27 @@ std::string GetAttributes(int batch, std::string type){
 }
 
 
+
 //*********************************************************************************//
+
+void SetDataSetRawChunkCache(hid_t dset_id,hsize_t chunk_size){
+ //for now I am just going to hard code the number of objects and bytes in cache
+ 
+     //Based on the documentation of H5Pset_chunk_cache();
+    hsize_t max_object_in_chunk_cache = chunk_size*100;//12799u;
+
+    hsize_t one_mb = 1024u*1024u; //1 MB
+    //Total size of the raw data chunk cache for this data-set.
+    hsize_t max_bytes_in_cache = 10u*one_mb; 
+    hid_t dapl_id = H5Dget_access_plist(dset_id);
+    H5Pset_chunk_cache(dapl_id,
+                      max_object_in_chunk_cache,
+                      max_bytes_in_cache,
+                      H5D_CHUNK_CACHE_W0_DEFAULT);
+}
+
+//***********************************************************************************************//
+
 //only create the data-sets nothing else.
 int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
   
@@ -117,7 +132,6 @@ int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
  // if(class_ptr==nullptr)return mpi_size;
 
   std::string branch_name = branch->GetName();
-  std::string offset_name = branch_name+"_offset";
   std::string branch_info = branch_name+"_info";
 
 
@@ -128,8 +142,8 @@ int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
   hid_t info_id;
   dimsf[0]=0;
   max_dims[0]=H5S_UNLIMITED;
-  
-  hsize_t chunk_dims[1] = {static_cast<hsize_t>(buff_size*mpi_size*2000)}; //okay i had to add that extra number after mpi-size
+  hsize_t chunk_size = static_cast<hsize_t>(buff_size*1500);
+  hsize_t chunk_dims[1] = {chunk_size}; //okay i had to add that extra number after mpi-size
 
   
   auto dspace_id = H5Screate_simple(1,dimsf,max_dims);
@@ -139,10 +153,12 @@ int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
   auto xf_id = H5Pcreate(H5P_DATASET_XFER);
   
   //This is a bit challenging. To guarantee the smooth IO all the IO processes should use same chunk dims.
+    
   H5Pset_chunk(dplist_id,1,chunk_dims);
   dset_id = H5Dcreate(lumi_id,branch_name.c_str(),H5T_NATIVE_CHAR,dspace_id,
 		      H5P_DEFAULT,dplist_id,H5P_DEFAULT);
-
+ 
+    SetDataSetRawChunkCache(dset_id,chunk_size) ;
   //Create the Atributes:
 //    auto attr_id = H5Acreate (dset_id, "Attr", H5T_STD_I32BE, dspace_id, H5P_DEFAULT, H5P_DEFAULT);
  //  H5Aclose (attr_id);
@@ -159,9 +175,8 @@ int CreateDataSet(TBranch *branch,int buff_size,int batch_size, hid_t lumi_id){
 
   return mpi_size;
 }
+//************************************************************************************************//
 
-
-//***********************************************************************************************//
 
 void CreateDataSets(TObjArray *l, std::string tree_name,int batch_size, hid_t lumi){
     
@@ -189,6 +204,7 @@ void CreateDataSets(TObjArray *l, std::string tree_name,int batch_size, hid_t lu
  //  std::cout<<"Created "<<branch->GetName()<<std::endl; 
     }
     
+    MPI_Barrier(MPI_COMM_WORLD);
     
 }
 
@@ -438,7 +454,30 @@ int WriteDataSetsSerial(std::string branch_name,std::vector<char>&buff,hid_t lum
 }
 //********************************************************************************//
 
-// I will try to first collect the token from here.
+std::vector<int>WriteDataAndReturnStatus(std::vector<product_t> const& products, 
+			std::vector<std::string> const& ds_names,                             
+           long unsigned int round,
+           hid_t lumi_id, int mpi_rank,
+           int mpi_size,int st_val, int end_val){
+   
+    std::vector<int>token_info;
+    int num_prods = ds_names.size();
+    for(int prod_index = st_val; prod_index<end_val;++prod_index){
+        auto prod_size = products[prod_index].size();
+        auto tmp = get_prods_ver2(products,prod_index,end_val, num_prods);
+        auto tmp1 = flatten_MPI(tmp);
+        auto ds_name = ds_names[prod_index];
+        
+        std::vector<int>_status={-1,-1}; 
+        _status = WriteDataSets(ds_name,tmp1,lumi_id,round,mpi_rank,mpi_size); 
+       token_info.push_back(_status[1]);
+    }
+        
+       return token_info;
+}
+    
+
+//*********************************************************************************//
 
 void write_1D_chars_MPI(std::vector<product_t> const& products, 
 			std::vector<std::string> const& ds_names, 
@@ -446,12 +485,14 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
 			long unsigned int nbatch, 
 			long unsigned int round,
 			hid_t lumi_id,int mpi_rank,
-			int mpi_size, int ievt, int tentry,bool serial) 
+			int mpi_size, int ievt, int tentry,bool serial=false) 
 {
 
+    
   std::vector<int>token_info;
   auto num_prods = ds_names.size();
   for(int prod_index = 0;prod_index<num_prods;++prod_index){
+
     auto prod_size = products[prod_index].size();
     auto tmp = get_prods(products,prod_index,num_prods);
     auto sizes = get_sizes(tmp);
@@ -460,18 +501,15 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
     auto ds_name = ds_names[prod_index];
     
     std::vector<int>_status={-1,-1}; 
-    if(!serial){ 
 
-     _status = WriteDataSets(ds_name,tmp1,lumi_id,round,mpi_rank,mpi_size);
+   _status = WriteDataSets(ds_name,tmp1,lumi_id,round,mpi_rank,mpi_size);
 
-    token_info.push_back(_status[1]);
-    }    
-    else{
-    auto  status = WriteDataSetsSerial(ds_name,tmp1,lumi_id,round);
-    }
+   token_info.push_back(_status[1]);
+        
+
   }
   MPI_Barrier(MPI_COMM_WORLD);
- // std::cout<<"Size of the Token "<<token_info.size()<<std::endl;
+
   hid_t tk_status = -1;
 
   tk_status = WriteTokenInfo(lumi_id, round,token_info);
@@ -480,9 +518,7 @@ void write_1D_chars_MPI(std::vector<product_t> const& products,
   token_info.clear();
 }
 
-void SetTotalBranches(int nbranch){
-  __tot_branches=nbranch;
-}
+
 //***********************************************************************************//
 
 #endif

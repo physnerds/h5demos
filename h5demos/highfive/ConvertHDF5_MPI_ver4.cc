@@ -53,18 +53,15 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
 
 
-
+   //create property lists of the hdf5 create attributes and groups etc
    auto plist_id = H5Pcreate (H5P_FILE_ACCESS);
 
- //  auto  ret = H5Pset_fapl_mpio(plist_id,MPI_COMM_WORLD,info);
    auto ret = H5Pset_fapl_mpio(plist_id,MPI_COMM_SELF,info);
     assert(ret>=0);
    // H5Pset_fapl_mpio( file_access, MPI_COMM_SELF, MPI_INFO_NULL ) 
     auto H5FILE_NAME = outname.c_str();
     file_id = H5Fcreate(H5FILE_NAME, H5F_ACC_TRUNC, H5P_DEFAULT, plist_id);
-    //file_id
-   // auto f_id(hdf5::File::create(H5FILE_NAME,plist_id));
-    //file_id = (hid_t)f_id;
+
     auto run_name = "/run";
     auto scalar_id = H5Screate(H5S_SCALAR);
     run = H5Gcreate(file_id,run_name,H5P_DEFAULT,H5P_DEFAULT,H5P_DEFAULT);
@@ -78,6 +75,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     auto lumi_att_id = H5Screate(H5S_SCALAR);
     auto lumi_attr = H5Acreate(lumi,lumi_name,H5T_NATIVE_INT,lumi_att_id,H5P_DEFAULT,H5P_DEFAULT);
 
+    //create the DataSets based on the Input ROOT File
 
     std::vector<product_t>products;
     std::string ntuple_name = "CollectionTree";
@@ -100,10 +98,9 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
 
     auto nentries = e->GetEntriesFast();
     auto tot_branches = l->GetEntriesFast();
-    auto classes = return_classes(l);
     auto dset_names = return_dsetnames(l);
-    nentries = 500;
-    std::cout<<"Total Number of Entries are "<<nentries<< " Total Branches"<< tot_branches<<" "<<dset_names.size()<<" "<<classes.size()<<std::endl;
+    nentries = 1000;
+    std::cout<<"Total Number of Entries are "<<nentries<< " Total Branches"<< tot_branches<<" "<<dset_names.size()<<std::endl;
    tot_branches = dset_names.size(); 
   
     CreateDataSets(l,ntuple_name,batch, lumi);
@@ -112,6 +109,8 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     std::vector<int>dummy_token={0};
     auto token_info = CreateEventInfo("TokenInfo",dummy_token,lumi,true);
 
+    //End of Data Set Creation
+    
     int nbatch = 0;
     int round = 0;
 
@@ -128,14 +127,17 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     std::cout<<"Total Entries "<<nentries<<" "<<niter*global_size+remainder
 	     <<" Iter "<<niter<<" Remainder "<<remainder<<std::endl;
     MPI_Barrier(MPI_COMM_WORLD);
-
+    
+    
+   //Write data-products into HDF5  
+  
     for(int i=0;i<niter;i++){
       auto j = global_rank+global_size*i;
       e->GetEntry(j);
       
-
+        
       std::vector<product_t> temp_products = ReturnBlobs(l,tot_branches);
-      if(products.size()==0)products.reserve(temp_products.size());
+        if(products.size()==0)products.reserve(temp_products.size());
       else
           products.resize(products.size()+temp_products.size());
       copy(temp_products.begin(),temp_products.end(),back_inserter(products));
@@ -196,9 +198,7 @@ void ConvertHDF5_MPI(char* input_file_dir,int batch,int run_num,int lumi_num,std
     obj_id = H5Fget_obj_count(file_id,H5F_OBJ_FILE);
     std::cout<<"Total Open files are "<<obj_id<<" in rank "<<global_rank<<std::endl;
 
-    //in the end close the file.
-   // delete tk;
-   // H5Fclose(file_id);
+
     MPI_Barrier(MPI_COMM_WORLD);
 
     
